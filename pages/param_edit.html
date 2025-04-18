@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-zinc-900 text-zinc-100">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Snap‑Blaster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: grey; /* zinc-700 */
+            border-radius: 3px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: darkorange; /* blue-500 */
+            cursor: pointer;
+            margin-top: -4px;
+        }
+
+        input[type=range]::-moz-range-thumb {
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: green; /* blue-500 */
+            cursor: pointer;
+            border: none;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            box-shadow: 0 0 0 2px #f97316; /* orange-400 */
+        }
+
+        input[type=range]::-moz-range-thumb:hover {
+            box-shadow: 0 0 0 2px #f97316;
+        }
+        .param-row:nth-child(even) {
+            background-color: rgba(255, 255, 255, 0.04); /* or any subtle tint */
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- Ableton-style App Bar -->
+<header class="bg-zinc-800 px-2 py-2 flex items-center justify-between border-b border-zinc-700 text-xs">
+    <div class="flex items-center gap-2">
+        <span class="font-semibold tracking-wider">SNAP‑BLASTER</span>
+        <select class="bg-zinc-700 text-xs px-2 py-1 border border-zinc-600">
+            <option>Launchpad X</option>
+            <option>Launchpad Mini</option>
+        </select>
+        <span class="text-green-400">Link: Connected</span>
+        <button class="bg-zinc-700 w-14 px-2 py-1 border border-zinc-600 hover:bg-zinc-600">1-16</button>
+        <button class="bg-zinc-700 w-14 px-2 py-1 border border-zinc-600 hover:bg-zinc-600">17-32</button>
+        <button class="bg-zinc-700 w-14 px-2 py-1 border border-zinc-600 hover:bg-zinc-600">33-48</button>
+        <button class="bg-zinc-700 w-14 px-2 py-1 border border-zinc-600 hover:bg-zinc-600">49-64</button>
+        <span class="font-semibold tracking-wider">SNAP</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <button class="w-14 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-xs border border-emerald-500">🔮AI</button>
+        <button class="bg-zinc-700 w-14 hover:bg-zinc-600 text-white px-1 py-1 border border-zinc-600">🎛️ Snap</button>
+        <button class="bg-zinc-700 w-14 hover:bg-zinc-600 text-white px-1 py-1 border border-zinc-600">🎚️ Conf</button>
+        <button class="bg-zinc-700 w-14 hover:bg-zinc-600 text-white px-1 py-1 border border-zinc-600">💾 Save</button>
+        <button class="bg-zinc-700 w-14 hover:bg-zinc-600 text-white px-1 py-1 border border-zinc-600">📂 Load</button>
+    </div>
+</header>
+
+<!-- Main Layout -->
+<main class="flex flex-1 overflow-hidden">
+    <!-- Sidebar styled like Ableton browser -->
+    <aside class="w-100 bg-zinc-850 text-zinc-300 border-r border-zinc-700 p-4 pt-4 text-xs">
+        <!-- Launchpad Grid -->
+        <div class="grid grid-cols-8 gap-[2px] border border-zinc-700 p-1 bg-zinc-900">
+
+            <!-- Modifier row -->
+            <div class="bg-blue-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 1"></div>
+            <div class="bg-blue-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 2"></div>
+            <div class="bg-blue-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 3"></div>
+            <div class="bg-blue-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 4"></div>
+            <div class="bg-blue-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 5"></div>
+            <div class="bg-red-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 6"></div>
+            <div class="bg-red-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 7"></div>
+            <div class="bg-red-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 8"></div>
+            <div class="bg-orange-500 h-7 w-7 rounded-sm cursor-pointer hover:ring-2" title="Pad 1"></div>
+            <template id="pad-template">
+                <div class="h-7 w-7 bg-zinc-600 rounded-sm"></div>
+            </template>
+            <script>
+                for (let i = 0; i < 47; i++) {
+                    const pad = document.getElementById('pad-template').content.cloneNode(true);
+                    document.currentScript.parentElement.appendChild(pad);
+                }
+            </script>
+        </div>
+
+        <div class="grid grid-cols-[auto,1fr] gap-[2px] p-1 pt-4 pb-4 bg-zinc-900">
+            <div class="w-12 text-zinc-300">Project:</div>
+            <div><strong class="text-white">dark_techno.sb</strong></div>
+            <div class="w-12 text-zinc-300">Bank:</div>
+            <div><strong class="text-white">1</strong></div>
+        </div>
+
+        <!-- Snap Info and Launchpad UI -->
+        <div class="flex flex-col md:flex-row gap-6">
+            <div class="flex-1 space-y-2">
+                <textarea rows="17" class="w-full text-xs p-2 bg-zinc-800 border border-zinc-600">This snap is full of snaps for dark techno style builds, drops and general track shaping.</textarea>
+            </div>
+        </div>
+        <br/>
+    </aside>
+
+    <!-- Right Content -->
+    <section class="flex-1 flex flex-col gap-4 overflow-auto">
+        <div class="bg-zinc-850 p-4 pt-0 text-xs space-y-4">
+            <template id="control-template">
+                <div class="param-row grid grid-cols-[1fr_16px_1fr] gap-0">
+                    <div class="param-cell border border-zinc-800 p-2">
+                        <label class="flex items-center justify-between text-zinc-400 mb-1">
+                            <span>Rumble Bass Mix</span>
+                            <span class="flex items-center gap-2">
+                                <span class="text-xs text-zinc-400 group-hover:text-white">64</span>
+                                <button class="text-zinc-500 hover:text-amber-400 text-sm"
+                                        title="Wiggle this param for MIDI Learn">🎚️</button>
+                            </span>
+                        </label>
+                        <div class="relative group">
+                            <input
+                                    type="range"
+                                    min="0"
+                                    max="127"
+                                    value="64"
+                                    class="w-full transition-all duration-150 hover:brightness-110 focus:ring-1 focus:ring-amber-400"
+                            />
+                        </div>
+                    </div>
+                    <div class="bg-zinc-900"></div>
+                    <div class="param-cell border border-zinc-800 p-2">
+                        <label class="flex items-center justify-between text-zinc-400 mb-1">
+                            <span>FX Depth</span>
+                            <span class="flex items-center gap-2">
+                                <span class="text-xs text-zinc-400 group-hover:text-white">64</span>
+                                <button class="text-zinc-500 hover:text-amber-400 text-sm"
+                                        title="Wiggle this param for MIDI Learn">🎚️</button>
+                            </span>
+                        </label>
+                        <div class="relative group">
+                            <input
+                                    type="range"
+                                    min="0"
+                                    max="127"
+                                    value="24"
+                                    class="w-full transition-all duration-150 hover:brightness-110 focus:ring-1 focus:ring-indigo-400"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <script>
+                for (let i = 0; i < 8; i++) {
+                    const control = document.getElementById('control-template').content.cloneNode(true);
+                    const row = control.querySelector('.param-row');
+                    if (i % 2 !== 0) {
+                        row.classList.add('bg-zinc-800');
+                    }
+                    document.currentScript.parentElement.appendChild(control);
+                }
+            </script>
+        </div>
+
+    </section>
+</main>
+
+</body>
+</html>
