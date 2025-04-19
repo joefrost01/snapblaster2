@@ -2,9 +2,9 @@ use crate::events::{Event, EventBus};
 use crate::model::SharedState;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use std::error::Error;
 
 /// AI Service for generating parameter values with OpenAI
 pub struct AIService {
@@ -128,7 +128,11 @@ impl AIService {
     }
 
     /// Generate a single parameter value using OpenAI
-    async fn generate_value(&self, api_key: &str, prompt: &str) -> Result<u8, Box<dyn Error + Send + Sync>> {
+    async fn generate_value(
+        &self,
+        api_key: &str,
+        prompt: &str,
+    ) -> Result<u8, Box<dyn Error + Send + Sync>> {
         // Create the request
         let request = OpenAIRequest {
             model: "gpt-3.5-turbo".to_string(),
@@ -146,7 +150,8 @@ impl AIService {
         };
 
         // Send the request
-        let response = self.client
+        let response = self
+            .client
             .post("https://api.openai.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")

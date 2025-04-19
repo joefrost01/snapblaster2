@@ -1,6 +1,6 @@
-use std::error::Error;
 use crate::events::{Event, EventBus};
 use crate::midi::controller::{MidiGridController, Rgb};
+use std::error::Error;
 
 pub struct Push2 {
     event_bus: EventBus,

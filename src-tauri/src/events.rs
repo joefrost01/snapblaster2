@@ -1,5 +1,5 @@
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use tokio::sync::broadcast;
 use tracing::{debug, error, warn};
 
@@ -19,22 +19,52 @@ pub enum MorphCurve {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {
     // MIDI events
-    PadPressed { pad: u8, velocity: u8 },
-    CCValueChanged { param_id: usize, value: u8 },
+    PadPressed {
+        pad: u8,
+        velocity: u8,
+    },
+    CCValueChanged {
+        param_id: usize,
+        value: u8,
+    },
 
     // Link events
-    BeatOccurred { beat: u32, phase: f64 },
-    BarOccurred { bar: u32 },
+    BeatOccurred {
+        beat: u32,
+        phase: f64,
+    },
+    BarOccurred {
+        bar: u32,
+    },
 
     // UI events
-    SnapSelected { bank: usize, snap_id: usize },
-    ParameterEdited { param_id: usize, value: u8 },
-    BankSelected { bank_id: usize },
+    SnapSelected {
+        bank: usize,
+        snap_id: usize,
+    },
+    ParameterEdited {
+        param_id: usize,
+        value: u8,
+    },
+    BankSelected {
+        bank_id: usize,
+    },
 
     // AI events
-    GenerateAIValues { bank_id: usize, snap_id: usize },
-    AIGenerationCompleted { bank_id: usize, snap_id: usize, values: Vec<u8> },
-    AIGenerationFailed { bank_id: usize, snap_id: usize, error: String },
+    GenerateAIValues {
+        bank_id: usize,
+        snap_id: usize,
+    },
+    AIGenerationCompleted {
+        bank_id: usize,
+        snap_id: usize,
+        values: Vec<u8>,
+    },
+    AIGenerationFailed {
+        bank_id: usize,
+        snap_id: usize,
+        error: String,
+    },
 
     // Morphing events
     MorphInitiated {
@@ -43,7 +73,10 @@ pub enum Event {
         duration_bars: u8,
         curve_type: MorphCurve,
     },
-    MorphProgressed { progress: f64, current_values: Vec<u8> },
+    MorphProgressed {
+        progress: f64,
+        current_values: Vec<u8>,
+    },
     MorphCompleted,
 
     // Project events
@@ -89,7 +122,7 @@ impl EventBus {
                 if receiver_count == 0 {
                     warn!(bus = %self.name, "No receivers for event: {}", event.event_type());
                 }
-            },
+            }
             Err(e) => {
                 error!(bus = %self.name, "Failed to publish event: {}", e);
             }
@@ -143,38 +176,61 @@ impl Event {
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Event::PadPressed { pad, velocity } =>
-                write!(f, "PadPressed: pad={}, velocity={}", pad, velocity),
-            Event::CCValueChanged { param_id, value } =>
-                write!(f, "CCValueChanged: param_id={}, value={}", param_id, value),
-            Event::BeatOccurred { beat, phase } =>
-                write!(f, "BeatOccurred: beat={}, phase={:.2}", beat, phase),
-            Event::BarOccurred { bar } =>
-                write!(f, "BarOccurred: bar={}", bar),
-            Event::SnapSelected { bank, snap_id } =>
-                write!(f, "SnapSelected: bank={}, snap_id={}", bank, snap_id),
-            Event::ParameterEdited { param_id, value } =>
-                write!(f, "ParameterEdited: param_id={}, value={}", param_id, value),
-            Event::BankSelected { bank_id } =>
-                write!(f, "BankSelected: bank_id={}", bank_id),
-            Event::GenerateAIValues { bank_id, snap_id } =>
-                write!(f, "GenerateAIValues: bank_id={}, snap_id={}", bank_id, snap_id),
-            Event::AIGenerationCompleted { bank_id, snap_id, .. } =>
-                write!(f, "AIGenerationCompleted: bank_id={}, snap_id={}", bank_id, snap_id),
-            Event::AIGenerationFailed { bank_id, snap_id, error } =>
-                write!(f, "AIGenerationFailed: bank_id={}, snap_id={}, error={}", bank_id, snap_id, error),
-            Event::MorphInitiated { from_snap, to_snap, duration_bars, curve_type } =>
-                write!(f, "MorphInitiated: from={}, to={}, duration={}bars, curve={:?}", from_snap, to_snap, duration_bars, curve_type),
-            Event::MorphProgressed { progress, .. } =>
-                write!(f, "MorphProgressed: progress={:.2}", progress),
-            Event::MorphCompleted =>
-                write!(f, "MorphCompleted"),
-            Event::ProjectLoaded =>
-                write!(f, "ProjectLoaded"),
-            Event::ProjectSaved =>
-                write!(f, "ProjectSaved"),
-            Event::Shutdown =>
-                write!(f, "Shutdown"),
+            Event::PadPressed { pad, velocity } => {
+                write!(f, "PadPressed: pad={}, velocity={}", pad, velocity)
+            }
+            Event::CCValueChanged { param_id, value } => {
+                write!(f, "CCValueChanged: param_id={}, value={}", param_id, value)
+            }
+            Event::BeatOccurred { beat, phase } => {
+                write!(f, "BeatOccurred: beat={}, phase={:.2}", beat, phase)
+            }
+            Event::BarOccurred { bar } => write!(f, "BarOccurred: bar={}", bar),
+            Event::SnapSelected { bank, snap_id } => {
+                write!(f, "SnapSelected: bank={}, snap_id={}", bank, snap_id)
+            }
+            Event::ParameterEdited { param_id, value } => {
+                write!(f, "ParameterEdited: param_id={}, value={}", param_id, value)
+            }
+            Event::BankSelected { bank_id } => write!(f, "BankSelected: bank_id={}", bank_id),
+            Event::GenerateAIValues { bank_id, snap_id } => write!(
+                f,
+                "GenerateAIValues: bank_id={}, snap_id={}",
+                bank_id, snap_id
+            ),
+            Event::AIGenerationCompleted {
+                bank_id, snap_id, ..
+            } => write!(
+                f,
+                "AIGenerationCompleted: bank_id={}, snap_id={}",
+                bank_id, snap_id
+            ),
+            Event::AIGenerationFailed {
+                bank_id,
+                snap_id,
+                error,
+            } => write!(
+                f,
+                "AIGenerationFailed: bank_id={}, snap_id={}, error={}",
+                bank_id, snap_id, error
+            ),
+            Event::MorphInitiated {
+                from_snap,
+                to_snap,
+                duration_bars,
+                curve_type,
+            } => write!(
+                f,
+                "MorphInitiated: from={}, to={}, duration={}bars, curve={:?}",
+                from_snap, to_snap, duration_bars, curve_type
+            ),
+            Event::MorphProgressed { progress, .. } => {
+                write!(f, "MorphProgressed: progress={:.2}", progress)
+            }
+            Event::MorphCompleted => write!(f, "MorphCompleted"),
+            Event::ProjectLoaded => write!(f, "ProjectLoaded"),
+            Event::ProjectSaved => write!(f, "ProjectSaved"),
+            Event::Shutdown => write!(f, "Shutdown"),
         }
     }
 }

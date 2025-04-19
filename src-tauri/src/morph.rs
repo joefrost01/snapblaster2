@@ -1,9 +1,8 @@
 use crate::events::{Event, EventBus, MorphCurve};
-use crate::model::{SharedState, ActiveMorph};
+use crate::model::{ActiveMorph, SharedState};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Duration};
-use std::f64::consts::PI;
 
 /// MorphEngine handles interpolation between snaps
 pub struct MorphEngine {
@@ -31,20 +30,26 @@ impl MorphEngine {
 
             while let Ok(event) = self.event_receiver.recv().await {
                 match event {
-                    Event::MorphInitiated { from_snap, to_snap, duration_bars, curve_type } => {
+                    Event::MorphInitiated {
+                        from_snap,
+                        to_snap,
+                        duration_bars,
+                        curve_type,
+                    } => {
                         // Start a new morph
-                        self.start_morph(from_snap, to_snap, duration_bars, curve_type).await;
+                        self.start_morph(from_snap, to_snap, duration_bars, curve_type)
+                            .await;
                         morph_active = true;
-                    },
+                    }
                     Event::BeatOccurred { beat: _, phase } => {
                         // Update morph progress based on beat phase if a morph is active
                         if morph_active {
                             morph_active = self.update_morph(phase).await;
                         }
-                    },
+                    }
                     Event::Shutdown => {
                         break;
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -52,7 +57,13 @@ impl MorphEngine {
     }
 
     /// Start a new morph between two snaps
-    async fn start_morph(&self, from_snap: usize, to_snap: usize, duration_bars: u8, curve_type: MorphCurve) {
+    async fn start_morph(
+        &self,
+        from_snap: usize,
+        to_snap: usize,
+        duration_bars: u8,
+        curve_type: MorphCurve,
+    ) {
         // Get the values for both snaps
         let (from_values, to_values) = {
             let state_guard = self.state.read().unwrap();
@@ -117,7 +128,11 @@ impl MorphEngine {
                     // Publish progress event
                     let current_values = {
                         let state_guard = state.read().unwrap();
-                        state_guard.active_morph.as_ref().map(|m| m.current_values.clone()).unwrap_or_default()
+                        state_guard
+                            .active_morph
+                            .as_ref()
+                            .map(|m| m.current_values.clone())
+                            .unwrap_or_default()
                     };
 
                     let _ = event_bus.publish(Event::MorphProgressed {
@@ -205,7 +220,12 @@ impl MorphEngine {
     }
 
     /// Interpolate between two sets of values based on a curve
-    fn interpolate_values(from: &[u8], to: &[u8], progress: f64, curve_type: MorphCurve) -> Vec<u8> {
+    fn interpolate_values(
+        from: &[u8],
+        to: &[u8],
+        progress: f64,
+        curve_type: MorphCurve,
+    ) -> Vec<u8> {
         let mut result = Vec::with_capacity(from.len());
 
         for i in 0..from.len() {

@@ -1,19 +1,20 @@
 // Re-export modules for easier imports
+pub mod ai;
 pub mod events;
 pub mod model;
-pub mod storage;
-pub mod ai;
 pub mod morph;
+pub mod storage;
 
 // MIDI subsystem
 pub mod midi {
     pub mod controller;
     pub mod service;
     pub mod controllers {
-        pub mod launchpad_x;
-        pub mod launchpad_mini;
-        pub mod push_2;
         pub mod apc_mini;
+        pub mod generic;
+        pub mod launchpad_mini;
+        pub mod launchpad_x;
+        pub mod push_2;
     }
 }
 
@@ -70,9 +71,7 @@ pub mod link {
 
                     // Check if we're at a bar boundary
                     if beat_count % 4 == 0 {
-                        let _ = event_bus.publish(Event::BarOccurred {
-                            bar: bar_count,
-                        });
+                        let _ = event_bus.publish(Event::BarOccurred { bar: bar_count });
                         bar_count += 1;
                     }
 
@@ -104,16 +103,16 @@ pub mod link {
 
 // App state and initialization
 pub mod app {
-    use crate::events::EventBus;
-    use crate::model::{SharedState, new_shared_state};
-    use crate::storage::ProjectStorage;
     use crate::ai::AIService;
-    use crate::morph::MorphEngine;
-    use crate::midi::service::MidiService;
+    use crate::events::EventBus;
     use crate::link::LinkSynchronizer;
-    use tokio::task::JoinHandle;
+    use crate::midi::service::MidiService;
+    use crate::model::{new_shared_state, SharedState};
+    use crate::morph::MorphEngine;
+    use crate::storage::ProjectStorage;
     use std::error::Error;
     use std::path::Path;
+    use tokio::task::JoinHandle;
 
     /// Main application state
     pub struct App {

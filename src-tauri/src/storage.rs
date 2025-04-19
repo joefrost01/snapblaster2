@@ -1,5 +1,5 @@
-use crate::model::{Project, SharedState};
 use crate::events::{Event, EventBus};
+use crate::model::{Project, SharedState};
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
