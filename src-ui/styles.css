@@ -55,7 +55,7 @@ header {
     color: var(--text-primary);
     border: 1px solid var(--border-light);
     padding: 4px 8px;
-    border-radius: 3px;
+    border-radius: 1px;
     font-size: 0.8rem;
 }
 
@@ -476,4 +476,19 @@ input[type="number"]::-webkit-outer-spin-button {
 
 input[type="number"] {
     -moz-appearance: textfield;
+}
+
+.bpm-label {
+    font-size: 0.8rem;
+}
+
+input.bpm {
+    width: 40px;
+    text-align: center;
+    background-color: var(--bg-light);
+    border: 1px solid var(--border-light);
+    padding: 4px;
+    border-radius: 3px;
+    font-size: small;
+    color: var(--text-secondary);
 }
