@@ -10,7 +10,6 @@
 <!-- Header Bar -->
 <header>
     <div class="left-group">
-        <div class="app-title">SNAP-BLASTER</div>
         <select id="controller-select" class="controller-select">
             <option>Launchpad X</option>
             <option>Launchpad Mini</option>
@@ -80,7 +79,9 @@
                     <button id="tab-1-16" class="tab-btn active">1-16</button>
                     <button id="tab-17-32" class="tab-btn">17-32</button>
                     <button id="tab-33-48" class="tab-btn">33-48</button>
-                    <button id="tab-49-64" class="tab-btn">49-64</button>
+                    <button id="tab-49-64" class="tab-btn">49-56</button>
+                    <button id="copy" class="tab-btn">copy</button>
+                    <button id="paste" class="tab-btn">paste</button>
                 </div>
                 <div id="parameters-container" class="parameters-container">
                     <!-- Parameters will be generated here -->
@@ -92,15 +93,21 @@
     <!-- Config View -->
     <div id="config-view" class="config-view hidden">
         <div class="config-header">
-            <h2>Parameter Configuration</h2>
-            <button id="add-param-btn" class="primary-btn">+ Add Parameter</button>
+            <h4>Parameter Configuration</h4>
+            <div class="tabs-container-conf">
+                <button id="tab-1-16-conf" class="tab-btn active">1-16</button>
+                <button id="tab-17-32-conf" class="tab-btn">17-32</button>
+                <button id="tab-33-48-conf" class="tab-btn">33-48</button>
+                <button id="tab-49-64-conf" class="tab-btn">49-64</button>
+            </div>
+            <button id="add-param-btn" class="add-param-btn">+ Add Parameter</button>
         </div>
         <div class="config-table">
             <div class="config-table-header">
                 <div class="col-name">Name</div>
                 <div class="col-desc">Description</div>
                 <div class="col-cc">CC Number</div>
-                <div class="col-actions"></div>
+                <!--                <div class="col-actions"><button id="add-param-btn" class="add-param-btn">+</button></div>-->
             </div>
             <div id="config-params-container" class="config-params-container">
                 <!-- Parameter rows will be generated here -->

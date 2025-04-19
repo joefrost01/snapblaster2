@@ -6,7 +6,7 @@
     "distDir": "../src-ui"
   },
   "package": {
-    "productName": "SNAP-BLASTER",
+    "productName": "Snap-Blaster",
     "version": "0.1.0"
   },
   "tauri": {
@@ -67,12 +67,12 @@
     "windows": [
       {
         "fullscreen": false,
-        "height": 720,
+        "height": 777,
         "resizable": false,
-        "title": "SNAP-BLASTER",
-        "width": 1040,
+        "title": "Snap-Blaster",
+        "width": 960,
         "minWidth": 960,
-        "minHeight": 761
+        "minHeight": 777
       }
     ]
   }
