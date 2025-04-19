@@ -1,6 +1,9 @@
 // config.js - Parameter configuration UI
 import { appState } from './state.js';
 
+// Current page for parameter configuration (0-3)
+let currentConfigPage = 0;
+
 // Render the parameter list in config view
 export function renderParameterList() {
     const elements = window.snapElements;
@@ -8,11 +11,39 @@ export function renderParameterList() {
 
     if (!appState.project) return;
 
-    // Create rows for each parameter
-    appState.project.parameters.forEach((param, index) => {
-        const row = createParameterRow(param, index);
+    // Calculate parameter range for current page
+    const startIdx = currentConfigPage * 16;
+    const endIdx = Math.min(startIdx + 16, appState.project.parameters.length);
+
+    // Create rows for each parameter in the current page
+    for (let i = startIdx; i < endIdx; i++) {
+        const param = appState.project.parameters[i];
+        const row = createParameterRow(param, i);
         elements.configParamsContainer.appendChild(row);
+    }
+
+    // Update active tab button
+    updateConfigTabButtons();
+}
+
+// Update config tab buttons to show which is active
+function updateConfigTabButtons() {
+    const tabButtons = [
+        document.getElementById('tab-1-16-conf'),
+        document.getElementById('tab-17-32-conf'),
+        document.getElementById('tab-33-48-conf'),
+        document.getElementById('tab-49-64-conf')
+    ];
+
+    // Remove active class from all buttons
+    tabButtons.forEach(btn => {
+        if (btn) btn.classList.remove('active');
     });
+
+    // Add active class to current page button
+    if (tabButtons[currentConfigPage]) {
+        tabButtons[currentConfigPage].classList.add('active');
+    }
 }
 
 // Create a row for parameter configuration
@@ -82,6 +113,12 @@ function updateParameter(index) {
 export function addParameter() {
     if (!appState.project) return;
 
+    // Enforce the 64 parameter limit
+    if (appState.project.parameters.length >= 64) {
+        alert('Maximum of 64 parameters reached');
+        return;
+    }
+
     // Find next available CC
     const usedCCs = appState.project.parameters.map(p => p.cc);
     let nextCC = 0;
@@ -106,8 +143,20 @@ export function addParameter() {
         });
     });
 
-    // Update UI
-    renderParameterList();
+    // Switch to last page if needed
+    const pageCount = Math.ceil(appState.project.parameters.length / 16);
+    if (pageCount > 0) {
+        setConfigPage(pageCount - 1);
+    } else {
+        // Update UI
+        renderParameterList();
+    }
 
     console.log('Added new parameter:', newParam);
+}
+
+// Set the current config page
+export function setConfigPage(pageIndex) {
+    currentConfigPage = pageIndex;
+    renderParameterList();
 }

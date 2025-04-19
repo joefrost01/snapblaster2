@@ -41,6 +41,39 @@ export function selectSnap(snapIndex) {
     }
 }
 
+// Create a new snap at the specified index
+export function createNewSnap(snapIndex) {
+    if (!appState.project) return;
+
+    const bank = appState.project.banks[appState.currentBank];
+
+    // Create snaps to fill any gaps
+    while (bank.snaps.length < snapIndex) {
+        bank.snaps.push({
+            name: `Snap ${bank.snaps.length + 1}`,
+            description: "Empty snap",
+            values: Array(appState.project.parameters.length).fill(64) // Default middle value
+        });
+    }
+
+    // Create the new snap
+    bank.snaps[snapIndex] = {
+        name: `Snap ${snapIndex + 1}`,
+        description: "New snap",
+        values: Array(appState.project.parameters.length).fill(64) // Default middle value
+    };
+
+    // Select the new snap
+    selectSnap(snapIndex);
+
+    // Recreate the grid to reflect the changes
+    import('./grid.js').then(module => {
+        module.createGrid();
+    });
+
+    console.log(`Created new snap at index ${snapIndex}`);
+}
+
 export function updateParameterValue(paramId, value) {
     if (!appState.project) return;
 

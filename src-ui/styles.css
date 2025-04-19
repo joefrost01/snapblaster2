@@ -492,3 +492,37 @@ input.bpm {
     font-size: small;
     color: var(--text-secondary);
 }
+
+/* Empty snap slots in the grid */
+.grid-pad.empty {
+    background-color: var(--bg-dark);
+    border: 1px dashed var(--border-light);
+}
+
+.grid-pad.empty:hover {
+    background-color: var(--bg-lighter);
+    border: 1px dashed var(--accent);
+}
+
+/* Style for the "active" state on tab buttons */
+.tab-btn.active {
+    background-color: var(--accent);
+    border-color: var(--accent-hover);
+}
+
+/* Style for disabled tab buttons */
+.tab-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Style for copied/pasted items */
+.snap-copied {
+    animation: pulse 1s;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(249, 115, 22, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+}

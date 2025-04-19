@@ -1,5 +1,5 @@
 // grid.js - Grid visualization
-import { appState, selectSnap } from './state.js';
+import { appState, selectSnap, createNewSnap } from './state.js';
 
 // Create and update the launchpad grid
 export function createGrid() {
@@ -28,16 +28,20 @@ export function createGrid() {
 
                 if (hasSnap && snapIndex === appState.currentSnap) {
                     pad.classList.add('active');
+                } else if (!hasSnap) {
+                    pad.classList.add('empty');
                 }
 
-                // Add click handler for valid snaps
-                if (row > 0) {
-                    pad.addEventListener('click', () => {
-                        if (hasSnap) {
-                            selectSnap(snapIndex);
-                        }
-                    });
-                }
+                // Add click handler for all non-modifier pads
+                pad.addEventListener('click', () => {
+                    if (hasSnap) {
+                        // Select existing snap
+                        selectSnap(snapIndex);
+                    } else {
+                        // Create a new snap when clicking on an empty space
+                        createNewSnap(snapIndex);
+                    }
+                });
             }
 
             elements.gridContainer.appendChild(pad);

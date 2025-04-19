@@ -1,7 +1,10 @@
 // events.js - Event listeners setup
 import { appState, selectSnap, updateParameterValue, updateSnapDescription } from './state.js';
 import { switchView } from './views.js';
-import { addParameter } from './config.js';
+import { addParameter, setConfigPage } from './config.js';
+
+// Global state for copy/paste
+let copiedSnap = null;
 
 // Setup all event listeners
 export function setupEventListeners() {
@@ -18,7 +21,7 @@ export function setupEventListeners() {
     document.getElementById('new-project-btn').addEventListener('click', createNewProject);
     document.getElementById('load-project-btn').addEventListener('click', loadProject);
 
-    // Tab buttons
+    // Tab buttons for editor view
     elements.tabButtons.forEach((btn, index) => {
         btn.addEventListener('click', () => {
             elements.tabButtons.forEach(b => b.classList.remove('active'));
@@ -30,6 +33,31 @@ export function setupEventListeners() {
         });
     });
 
+    // Tab buttons for config view
+    const configTabButtons = [
+        document.getElementById('tab-1-16-conf'),
+        document.getElementById('tab-17-32-conf'),
+        document.getElementById('tab-33-48-conf'),
+        document.getElementById('tab-49-64-conf')
+    ];
+
+    configTabButtons.forEach((btn, index) => {
+        if (btn) {
+            btn.addEventListener('click', () => {
+                // Only allow navigating to pages that have parameters
+                const paramsPerPage = 16;
+                const totalParams = appState.project ? appState.project.parameters.length : 0;
+
+                // Check if this page would have any parameters
+                if (index * paramsPerPage < totalParams || index === 0) {
+                    import('./config.js').then(module => {
+                        module.setConfigPage(index);
+                    });
+                }
+            });
+        }
+    });
+
     // Add parameter button
     document.getElementById('add-param-btn').addEventListener('click', addParameter);
 
@@ -38,8 +66,62 @@ export function setupEventListeners() {
         updateSnapDescription(e.target.value);
     });
 
+    // Copy/Paste buttons
+    document.getElementById('copy').addEventListener('click', copyCurrentSnap);
+    document.getElementById('paste').addEventListener('click', pasteToCurrentSnap);
+
     // Create mock project for testing (temporary)
     createMockProject();
+}
+
+// Copy the current snap
+function copyCurrentSnap() {
+    if (!appState.project) return;
+
+    const bank = appState.project.banks[appState.currentBank];
+    const snap = bank.snaps[appState.currentSnap];
+
+    // Make a deep copy of the snap
+    copiedSnap = {
+        name: snap.name + " (Copy)",
+        description: snap.description,
+        values: [...snap.values] // Create a new array with the same values
+    };
+
+    console.log('Copied snap:', copiedSnap);
+    alert('Snap copied');
+}
+
+// Paste to the current snap or create a new one
+function pasteToCurrentSnap() {
+    if (!appState.project || !copiedSnap) {
+        alert('No snap has been copied');
+        return;
+    }
+
+    const bank = appState.project.banks[appState.currentBank];
+
+    // Create a new snap with the copied values if we're at the end
+    if (appState.currentSnap >= bank.snaps.length) {
+        bank.snaps.push({
+            name: copiedSnap.name,
+            description: copiedSnap.description,
+            values: [...copiedSnap.values]
+        });
+
+        // Select the new snap
+        selectSnap(bank.snaps.length - 1);
+    } else {
+        // Otherwise overwrite the current snap
+        bank.snaps[appState.currentSnap].name = copiedSnap.name;
+        bank.snaps[appState.currentSnap].description = copiedSnap.description;
+        bank.snaps[appState.currentSnap].values = [...copiedSnap.values];
+
+        // Refresh the UI
+        selectSnap(appState.currentSnap);
+    }
+
+    console.log('Pasted snap values');
 }
 
 // Create a new project
