@@ -12,9 +12,22 @@ export function renderParameterList() {
 
     if (!appState.project) return;
 
+    console.log("Rendering parameter list, found",
+        appState.project.parameters ? appState.project.parameters.length : 0,
+        "parameters");
+
     // Calculate parameter range for current page
     const startIdx = currentConfigPage * 16;
     const endIdx = Math.min(startIdx + 16, appState.project.parameters.length);
+
+    // Handle case where there are no parameters
+    if (appState.project.parameters.length === 0) {
+        const emptyMessage = document.createElement('div');
+        emptyMessage.className = 'empty-parameters-message';
+        emptyMessage.innerHTML = 'No parameters defined yet. Click "Add Parameter" to create one.';
+        elements.configParamsContainer.appendChild(emptyMessage);
+        return;
+    }
 
     // Create rows for each parameter in the current page
     for (let i = startIdx; i < endIdx; i++) {
@@ -114,6 +127,9 @@ async function updateParameter(index) {
     const ccInput = row.querySelector('input[type="number"]');
 
     try {
+        // Show indication that update is in progress
+        row.classList.add('updating');
+
         await api.updateParameter(
             index,
             nameInput.value,
@@ -122,14 +138,30 @@ async function updateParameter(index) {
         );
 
         // Update local state
-        const param = appState.project.parameters[index];
-        param.name = nameInput.value;
-        param.description = descInput.value;
-        param.cc = parseInt(ccInput.value);
+        if (index < appState.project.parameters.length) {
+            const param = appState.project.parameters[index];
+            param.name = nameInput.value;
+            param.description = descInput.value;
+            param.cc = parseInt(ccInput.value);
+        }
 
-        console.log(`Updated parameter ${index}:`, param);
+        console.log(`Updated parameter ${index}:`, nameInput.value);
+
+        // Visual feedback for success
+        row.classList.add('update-success');
+        setTimeout(() => {
+            row.classList.remove('update-success');
+        }, 1000);
     } catch (error) {
         console.error('Error updating parameter:', error);
+
+        // Visual feedback for error
+        row.classList.add('update-error');
+        setTimeout(() => {
+            row.classList.remove('update-error');
+        }, 1000);
+    } finally {
+        row.classList.remove('updating');
     }
 }
 
@@ -151,6 +183,13 @@ export async function addParameter() {
     }
 
     try {
+        const addBtn = document.getElementById('add-param-btn');
+        if (addBtn) {
+            // Visual feedback that we're adding
+            addBtn.disabled = true;
+            addBtn.textContent = 'Adding...';
+        }
+
         // Call backend to add parameter
         await api.addParameter(
             `Parameter ${appState.project.parameters.length + 1}`,
@@ -162,20 +201,29 @@ export async function addParameter() {
         const project = await api.getProject();
         if (project) {
             appState.project = project;
+            console.log("Project updated, now has", project.parameters.length, "parameters");
         }
 
-        // Switch to last page if needed
+        // Calculate the new total pages
         const pageCount = Math.ceil(appState.project.parameters.length / 16);
+
+        // Switch to last page if needed
         if (pageCount > 0) {
             setConfigPage(pageCount - 1);
         } else {
-            // Update UI
+            // Just update UI
             renderParameterList();
         }
 
         console.log('Added new parameter with CC:', nextCC);
     } catch (error) {
         console.error('Error adding parameter:', error);
+    } finally {
+        const addBtn = document.getElementById('add-param-btn');
+        if (addBtn) {
+            addBtn.disabled = false;
+            addBtn.textContent = '+ Add Parameter';
+        }
     }
 }
 
@@ -184,3 +232,28 @@ export function setConfigPage(pageIndex) {
     currentConfigPage = pageIndex;
     renderParameterList();
 }
+
+const style = document.createElement('style');
+style.textContent = `
+.config-param-row.updating {
+    opacity: 0.7;
+}
+.config-param-row.update-success {
+    background-color: rgba(16, 185, 129, 0.2);
+    transition: background-color 1s;
+}
+.config-param-row.update-error {
+    background-color: rgba(239, 68, 68, 0.2);
+    transition: background-color 1s;
+}
+.empty-parameters-message {
+    padding: 20px;
+    text-align: center;
+    color: #a1a1aa;
+}
+.processing {
+    cursor: wait;
+    pointer-events: none;
+}
+`;
+document.head.appendChild(style);

@@ -127,25 +127,38 @@ async function initializeControllerDropdown() {
 function copyCurrentSnap() {
     if (!appState.project) return;
 
-    const bank = appState.project.banks[appState.currentBank];
-    const snap = bank.snaps[appState.currentSnap];
+    try {
+        const bank = appState.project.banks[appState.currentBank];
+        if (!bank || appState.currentSnap >= bank.snaps.length) {
+            console.error("Invalid bank or snap index for copy operation");
+            showNotification('No valid snap to copy', 'warning');
+            return;
+        }
 
-    // Make a deep copy of the snap
-    copiedSnap = {
-        name: snap.name + " (Copy)",
-        description: snap.description,
-        values: [...snap.values] // Create a new array with the same values
-    };
+        const snap = bank.snaps[appState.currentSnap];
 
-    console.log('Copied snap:', copiedSnap);
+        // Make a deep copy of the snap to prevent reference issues
+        copiedSnap = {
+            name: snap.name + " (Copy)",
+            description: snap.description,
+            values: [...snap.values] // Create a new array with the same values
+        };
 
-    // Add a visual feedback that snap was copied
-    const activeSnap = document.querySelector('.grid-pad.active');
-    if (activeSnap) {
-        activeSnap.classList.add('snap-copied');
-        setTimeout(() => {
-            activeSnap.classList.remove('snap-copied');
-        }, 1000);
+        console.log('Copied snap:', copiedSnap);
+
+        // Add a visual feedback that snap was copied
+        const activeSnap = document.querySelector('.grid-pad.active');
+        if (activeSnap) {
+            activeSnap.classList.add('snap-copied');
+            setTimeout(() => {
+                activeSnap.classList.remove('snap-copied');
+            }, 1000);
+        }
+
+        showNotification('Snap copied to clipboard', 'success');
+    } catch (error) {
+        console.error("Error during copy operation:", error);
+        showNotification('Error copying snap', 'error');
     }
 }
 
@@ -156,13 +169,22 @@ async function pasteToCurrentSnap() {
         return;
     }
 
-    // Get the latest bank information
-    const bank = appState.project.banks[appState.currentBank];
-
-    // Check if we need to create a new snap
-    const isNewSnap = appState.currentSnap >= bank.snaps.length;
-
     try {
+        // Disable UI during operation
+        document.body.classList.add('processing');
+
+        // Get the latest project data to ensure we're working with current state
+        const refreshedProject = await api.getProject();
+        if (refreshedProject) {
+            appState.project = refreshedProject;
+        }
+
+        // Get the latest bank information
+        const bank = appState.project.banks[appState.currentBank];
+
+        // Check if we need to create a new snap
+        const isNewSnap = appState.currentSnap >= bank.snaps.length;
+
         if (isNewSnap) {
             console.log("Creating new snap for paste target");
 
@@ -179,21 +201,39 @@ async function pasteToCurrentSnap() {
                 appState.project = updatedProject;
                 const newSnapIndex = appState.project.banks[appState.currentBank].snaps.length - 1;
 
+                // Make sure our parameter values array matches the actual parameters length
+                const paramLength = updatedProject.parameters.length;
+                const valuesCopy = [...copiedSnap.values];
+
+                // Resize the values array if needed
+                if (valuesCopy.length > paramLength) {
+                    valuesCopy.length = paramLength; // Truncate
+                } else while (valuesCopy.length < paramLength) {
+                    valuesCopy.push(64); // Extend with default values
+                }
+
                 // Select the newly created snap
                 console.log("Selecting new snap at index:", newSnapIndex);
                 await selectSnap(newSnapIndex);
 
-                // Update the parameter values
-                console.log("Updating parameter values for new snap");
-                for (let i = 0; i < copiedSnap.values.length; i++) {
-                    if (i < appState.project.parameters.length) {
-                        await api.editParameter(i, copiedSnap.values[i]);
-                    }
+                // Add a small delay before updating parameters to ensure selection is complete
+                await new Promise(resolve => setTimeout(resolve, 200));
+
+                // Update the parameter values one by one (more reliable than batch update)
+                for (let i = 0; i < valuesCopy.length; i++) {
+                    await api.editParameter(i, valuesCopy[i]);
+                    // Small delay between updates
+                    await new Promise(resolve => setTimeout(resolve, 20));
                 }
 
                 // Refresh the grid to show the new snap
                 import('./grid.js').then(module => {
                     module.createGrid();
+                });
+
+                // Refresh the parameters display
+                import('./parameters.js').then(module => {
+                    module.updateParameters();
                 });
 
                 // Show success message
@@ -210,11 +250,22 @@ async function pasteToCurrentSnap() {
                 copiedSnap.description
             );
 
-            // Update all parameter values
-            for (let i = 0; i < copiedSnap.values.length; i++) {
-                if (i < appState.project.parameters.length) {
-                    await api.editParameter(i, copiedSnap.values[i]);
-                }
+            // Make sure our parameter values array matches the actual parameters length
+            const paramLength = appState.project.parameters.length;
+            const valuesCopy = [...copiedSnap.values];
+
+            // Resize the values array if needed
+            if (valuesCopy.length > paramLength) {
+                valuesCopy.length = paramLength; // Truncate
+            } else while (valuesCopy.length < paramLength) {
+                valuesCopy.push(64); // Extend with default values
+            }
+
+            // Update all parameter values one by one
+            for (let i = 0; i < valuesCopy.length; i++) {
+                await api.editParameter(i, valuesCopy[i]);
+                // Small delay between updates
+                await new Promise(resolve => setTimeout(resolve, 20));
             }
 
             // Get the updated project data
@@ -234,6 +285,9 @@ async function pasteToCurrentSnap() {
     } catch (error) {
         console.error('Error during paste operation:', error);
         showNotification('Error during paste operation', 'error');
+    } finally {
+        // Re-enable UI
+        document.body.classList.remove('processing');
     }
 }
 
@@ -271,30 +325,51 @@ async function loadProject() {
     console.log('Loading project...');
 
     try {
+        // Add loading state
+        document.body.classList.add('processing');
+
         const filePath = await fileDialogs.loadProjectDialog();
         if (filePath) {
             console.log("Project loaded from:", filePath);
 
-            // Force refresh the state from backend
+            // Force refresh the state from backend with a direct call
             const project = await api.getProject();
-            if (project) {
-                appState.project = project;
 
-                // Switch to editor view and refresh UI
+            // Validate that we have a proper project with parameters
+            if (project && project.parameters) {
+                console.log("Project loaded successfully with",
+                    project.parameters.length, "parameters and",
+                    project.banks[0].snaps.length, "snaps in the first bank");
+
+                appState.project = project;
+                appState.currentBank = 0;
+                appState.currentSnap = 0;
+
+                // Switch to editor view
                 import('./views.js').then(module => {
                     module.switchView('editor');
+
+                    // After a small delay, update the parameters to ensure they're shown correctly
+                    setTimeout(() => {
+                        import('./parameters.js').then(paramModule => {
+                            paramModule.updateParameters();
+                        });
+                    }, 200);
                 });
 
                 // Show a notification
                 showNotification(`Project loaded: ${filePath.split('/').pop()}`, 'success');
             } else {
-                console.error("Failed to get project after loading");
-                showNotification("Failed to load project", 'error');
+                console.error("Failed to get a valid project after loading");
+                showNotification("Failed to load project - invalid format", 'error');
             }
         }
     } catch (error) {
         console.error('Error loading project:', error);
         showNotification("Error loading project", 'error');
+    } finally {
+        // Remove loading state
+        document.body.classList.remove('processing');
     }
 }
 
@@ -382,3 +457,29 @@ async function generateAIValues() {
         console.error('Error generating AI values:', error);
     }
 }
+
+eventBus.on('project-loaded', async () => {
+    try {
+        // Get the updated project from backend with explicit call
+        const project = await api.getProject();
+
+        if (project) {
+            console.log("Project loaded event received, updating state with",
+                project.parameters ? project.parameters.length : 0, "parameters");
+
+            // Update the state
+            appState.project = project;
+            appState.currentBank = 0;
+            appState.currentSnap = 0;
+
+            // Update UI with a small delay to ensure DOM is ready
+            setTimeout(() => {
+                import('./views.js').then(module => {
+                    module.switchView('editor');
+                });
+            }, 100);
+        }
+    } catch (error) {
+        console.error("Error handling project-loaded event:", error);
+    }
+});

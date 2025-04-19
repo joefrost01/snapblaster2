@@ -162,8 +162,24 @@ function updateConfigView() {
 
     if (!appState.project) return;
 
-    // Import and use the config module
-    import('./config.js').then(module => {
-        module.renderParameterList();
+    // Force a refresh of the project data before rendering
+    import('./tauri-api.js').then(module => {
+        module.api.getProject().then(updatedProject => {
+            if (updatedProject) {
+                // Update the appState with fresh data
+                appState.project = updatedProject;
+
+                // Now import and use the config module with updated data
+                import('./config.js').then(module => {
+                    module.renderParameterList();
+                });
+
+                console.log("Config view updated with refreshed project data:",
+                    updatedProject.parameters ? updatedProject.parameters.length : 0,
+                    "parameters found");
+            }
+        }).catch(error => {
+            console.error("Error refreshing project data:", error);
+        });
     });
 }

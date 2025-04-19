@@ -64,17 +64,33 @@ export function createGrid() {
                 }
 
                 // Add click handler for all non-modifier pads
-                pad.addEventListener('click', async () => {
+                pad.addEventListener('click', async (event) => {
+                    // Prevent rapid multiple clicks
+                    event.preventDefault();
+                    event.stopPropagation();
+
                     console.log("Pad clicked with snap index:", snapIndex);
 
-                    if (hasSnap) {
-                        // Select existing snap
-                        console.log("Selecting existing snap");
-                        await selectSnap(snapIndex);
-                    } else {
-                        // Create a new snap when clicking on an empty space
-                        console.log("Creating new snap");
-                        await createNewSnap(snapIndex);
+                    // Disable the pad temporarily to prevent double-clicks
+                    pad.style.pointerEvents = 'none';
+
+                    try {
+                        if (hasSnap) {
+                            // Select existing snap
+                            console.log("Selecting existing snap");
+                            await selectSnap(snapIndex);
+                        } else {
+                            // Create a new snap when clicking on an empty space
+                            console.log("Creating new snap");
+                            await createNewSnap(snapIndex);
+                        }
+                    } catch (error) {
+                        console.error("Error handling pad click:", error);
+                    } finally {
+                        // Re-enable the pad after a short delay
+                        setTimeout(() => {
+                            pad.style.pointerEvents = 'auto';
+                        }, 500);
                     }
                 });
             }

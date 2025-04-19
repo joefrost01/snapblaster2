@@ -526,3 +526,47 @@ input.bpm {
     70% { box-shadow: 0 0 0 10px rgba(249, 115, 22, 0); }
     100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
 }
+
+body.processing {
+    cursor: wait !important;
+    pointer-events: none !important;
+}
+
+body.processing button,
+body.processing input,
+body.processing textarea,
+body.processing .grid-pad {
+    opacity: 0.7;
+}
+
+/* Visual feedback for snap operations */
+.grid-pad.snap-copied {
+    animation: pulse 1s;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(249, 115, 22, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+}
+
+/* Visual feedback for config updates */
+.config-param-row.updating {
+    opacity: 0.7;
+}
+
+.config-param-row.update-success {
+    background-color: rgba(16, 185, 129, 0.2);
+    transition: background-color 1s;
+}
+
+.config-param-row.update-error {
+    background-color: rgba(239, 68, 68, 0.2);
+    transition: background-color 1s;
+}
+
+.empty-parameters-message {
+    padding: 20px;
+    text-align: center;
+    color: #a1a1aa;
+}

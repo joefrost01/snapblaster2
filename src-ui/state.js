@@ -21,13 +21,22 @@ export async function initializeState() {
 
         // Get project data from backend
         const project = await api.getProject();
-        if (project && project.banks && project.banks.length > 0) {
-            // Only consider it a valid project if it has at least one bank
-            console.log("Loaded existing project:", project);
+
+        // Only consider it a valid starting project if it has parameters AND snaps
+        // This prevents the default empty project from bypassing the welcome screen
+        if (project &&
+            project.banks &&
+            project.banks.length > 0 &&
+            project.banks[0].snaps.length > 0 &&
+            project.parameters &&
+            project.parameters.length > 0) {
+
+            console.log("Loaded existing project with parameters:", project);
             appState.project = project;
             appState.hasInitialProject = true;
         } else {
-            console.log("No valid project found, starting with welcome screen");
+            console.log("No valid project with parameters found, starting with welcome screen");
+            appState.project = project; // Still keep the project data if it exists
             appState.hasInitialProject = false;
         }
 
@@ -130,10 +139,26 @@ function setupEventListeners() {
 // Helper functions for state manipulation
 export async function selectSnap(snapIndex) {
     try {
+        console.log("Selecting snap at index:", snapIndex);
+
+        // Update local state first to make UI more responsive
+        appState.currentSnap = snapIndex;
+
+        // Update UI immediately before backend call completes
+        updateSnapDetailsInUI(snapIndex);
+        highlightCurrentSnap();
+
+        // Then make the backend call
         await api.selectSnap(appState.currentBank, snapIndex);
-        // The event listener will update the UI when the backend confirms
+
+        // The event listener will update the parameters when the backend confirms
     } catch (error) {
         console.error('Error selecting snap:', error);
+        // Revert to previous state on error
+        const currentProject = await api.getProject();
+        if (currentProject) {
+            appState.project = currentProject;
+        }
     }
 }
 
@@ -144,7 +169,10 @@ export async function createNewSnap(snapIndex) {
     try {
         console.log("Creating new snap at index:", snapIndex);
 
-        // Create the new snap with a named based on its position
+        // Disable UI during operation to prevent multiple clicks
+        document.body.classList.add('processing');
+
+        // Create the new snap with a name based on its position
         await api.addSnap(
             appState.currentBank,
             `Snap ${snapIndex + 1}`,
@@ -163,6 +191,7 @@ export async function createNewSnap(snapIndex) {
             console.log("New snap created, selecting it at index:", actualIndex);
 
             // Select the new snap
+            appState.currentSnap = actualIndex;
             await selectSnap(actualIndex);
 
             // Refresh the grid to show the new snap
@@ -171,37 +200,14 @@ export async function createNewSnap(snapIndex) {
             });
 
             // Show a notification
-            const notification = document.createElement('div');
-            notification.className = 'notification success';
-            notification.textContent = `Created new snap at position ${actualIndex + 1}`;
-            document.body.appendChild(notification);
-
-            setTimeout(() => {
-                notification.classList.add('fadeout');
-                setTimeout(() => {
-                    if (notification.parentNode) {
-                        document.body.removeChild(notification);
-                    }
-                }, 500);
-            }, 3000);
+            showSuccessNotification(`Created new snap at position ${actualIndex + 1}`);
         }
     } catch (error) {
         console.error('Error creating new snap:', error);
-
-        // Show error notification
-        const notification = document.createElement('div');
-        notification.className = 'notification error';
-        notification.textContent = 'Error creating new snap';
-        document.body.appendChild(notification);
-
-        setTimeout(() => {
-            notification.classList.add('fadeout');
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    document.body.removeChild(notification);
-                }
-            }, 500);
-        }, 3000);
+        showErrorNotification('Error creating new snap');
+    } finally {
+        // Re-enable UI
+        document.body.classList.remove('processing');
     }
 }
 
@@ -248,6 +254,68 @@ function showNotification(message, type = 'info') {
         notification.classList.add('fadeout');
         setTimeout(() => {
             document.body.removeChild(notification);
+        }, 500);
+    }, 3000);
+}
+
+function updateSnapDetailsInUI(snapIndex) {
+    const elements = window.snapElements;
+    if (!elements) return;
+
+    if (appState.project &&
+        appState.currentBank < appState.project.banks.length &&
+        snapIndex < appState.project.banks[appState.currentBank].snaps.length) {
+
+        const snap = appState.project.banks[appState.currentBank].snaps[snapIndex];
+
+        // Update snap name and description if elements exist
+        if (elements.snapName) {
+            elements.snapName.textContent = snap.name;
+        }
+
+        if (elements.snapDescription) {
+            elements.snapDescription.value = snap.description;
+        }
+    }
+}
+
+function highlightCurrentSnap() {
+    import('./grid.js').then(module => {
+        if (module.highlightSnap) {
+            module.highlightSnap(appState.currentSnap);
+        }
+    });
+}
+
+function showSuccessNotification(message) {
+    const notification = document.createElement('div');
+    notification.className = 'notification success';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.classList.add('fadeout');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+        }, 500);
+    }, 3000);
+}
+
+
+function showErrorNotification(message) {
+    const notification = document.createElement('div');
+    notification.className = 'notification error';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.classList.add('fadeout');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
         }, 500);
     }, 3000);
 }
