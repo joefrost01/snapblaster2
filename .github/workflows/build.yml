@@ -24,7 +24,12 @@ jobs:
 
       # Install Tauri CLI
       - name: Install Tauri CLI
-        run: cargo install tauri-cli@1.6.5
+        run: |
+          if ! command -v cargo-tauri &> /dev/null; then
+            cargo install tauri-cli@1.6.5
+          else
+            echo "Tauri CLI already installed"
+          fi
 
       # Install dependencies for Linux builds
       - name: Install Linux dependencies
