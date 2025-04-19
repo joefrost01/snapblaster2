@@ -22,8 +22,35 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Install Tauri CLI
+      # Cache Rust dependencies and tools
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # Install Tauri CLI for Windows (cached)
       - name: Install Tauri CLI
+        if: matrix.platform == 'windows-latest'
+        shell: powershell
+        run: |
+          if (-not (Get-Command cargo-tauri -ErrorAction SilentlyContinue)) {
+            cargo install tauri-cli@1.6.5
+          } else {
+            Write-Host "Tauri CLI already installed"
+          }
+
+      # Install Tauri CLI for Unix systems (cached)
+      - name: Install Tauri CLI
+        if: matrix.platform != 'windows-latest'
+        shell: bash
         run: |
           if ! command -v cargo-tauri &> /dev/null; then
             cargo install tauri-cli@1.6.5
