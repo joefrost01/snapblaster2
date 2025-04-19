@@ -1,0 +1,85 @@
+{
+  "build": {
+    "beforeBuildCommand": "pwd",
+    "beforeDevCommand": "pwd",
+    "devPath": "../src-ui",
+    "distDir": "../src-ui",
+    "withGlobalTauri": true
+  },
+  "package": {
+    "productName": "Snap-Blaster",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": true,
+      "dialog": {
+        "all": true,
+        "open": true,
+        "save": true
+      },
+      "fs": {
+        "all": true,
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "exists": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "category": "Music",
+      "copyright": "",
+      "deb": {
+        "depends": []
+      },
+      "externalBin": [],
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "identifier": "com.snapblaster.dev",
+      "longDescription": "MIDI CC snapshot controller for DAWs",
+      "macOS": {
+        "entitlements": null,
+        "exceptionDomain": "",
+        "frameworks": [],
+        "providerShortName": null,
+        "signingIdentity": null
+      },
+      "resources": [],
+      "shortDescription": "MIDI CC snapshots",
+      "targets": "all",
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": ""
+      }
+    },
+    "security": {
+      "csp": {
+        "default-src": ["'self'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "connect-src": ["'self'"]
+      }
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "height": 777,
+        "resizable": false,
+        "title": "Snap-Blaster",
+        "width": 960,
+        "minWidth": 960,
+        "minHeight": 777
+      }
+    ]
+  }
+}
