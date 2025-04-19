@@ -20,14 +20,30 @@ struct AppState {
 
 /// List available MIDI input ports
 #[tauri::command]
-async fn list_midi_inputs() -> Result<Vec<String>, String> {
-  MidiService::list_input_ports().map_err(|e| e.to_string())
+async fn list_midi_inputs() -> Result<String, String> {
+  let ports = MidiService::list_input_ports()
+      .map_err(|e| e.to_string())?;
+
+  serde_json::to_string(&ports)
+      .map_err(|e| e.to_string())
 }
 
 /// List available MIDI output ports
 #[tauri::command]
-async fn list_midi_outputs() -> Result<Vec<String>, String> {
-  MidiService::list_output_ports().map_err(|e| e.to_string())
+async fn list_midi_outputs() -> Result<String, String> {
+  let ports = MidiService::list_output_ports()
+      .map_err(|e| e.to_string())?;
+
+  serde_json::to_string(&ports)
+      .map_err(|e| e.to_string())
+}
+
+/// Set the current MIDI controller
+#[tauri::command]
+async fn set_controller(name: String, state: State<'_, AppState>) -> Result<(), String> {
+  let mut state_guard = state.shared_state.write().unwrap();
+  state_guard.project.controller = name;
+  Ok(())
 }
 
 /// Get the current project state
@@ -61,16 +77,14 @@ async fn new_project(state: State<'_, AppState>) -> Result<(), String> {
 /// Select a snap
 #[tauri::command]
 async fn select_snap(bank_id: usize, snap_id: usize, state: State<'_, AppState>) -> Result<(), String> {
-  // Fix: Discard the usize result from publish() with a map
   state.event_bus.publish(Event::SnapSelected { bank: bank_id, snap_id })
-      .map(|_| ()) // Discard the success value
+      .map(|_| ())
       .map_err(|e| e.to_string())
 }
 
 /// Edit a parameter value
 #[tauri::command]
 async fn edit_parameter(param_id: usize, value: u8, state: State<'_, AppState>) -> Result<(), String> {
-  // Fix: Discard the usize result
   state.event_bus.publish(Event::ParameterEdited { param_id, value })
       .map(|_| ())
       .map_err(|e| e.to_string())
@@ -79,10 +93,32 @@ async fn edit_parameter(param_id: usize, value: u8, state: State<'_, AppState>) 
 /// Generate AI values for a snap
 #[tauri::command]
 async fn generate_ai_values(bank_id: usize, snap_id: usize, state: State<'_, AppState>) -> Result<(), String> {
-  // Fix: Discard the usize result
   state.event_bus.publish(Event::GenerateAIValues { bank_id, snap_id })
       .map(|_| ())
       .map_err(|e| e.to_string())
+}
+
+/// Send wiggle values for MIDI learn
+#[tauri::command]
+async fn send_wiggle(cc: u8, values: Vec<u8>, state: State<'_, AppState>) -> Result<(), String> {
+  // Find the parameter ID by CC number
+  let param_id = {
+    let state_guard = state.shared_state.read().unwrap();
+    state_guard.project.parameters.iter().position(|p| p.cc == cc)
+        .ok_or_else(|| format!("Parameter with CC {} not found", cc))?
+  };
+
+  // Send each value with a small delay
+  for value in values {
+    state.event_bus.publish(Event::ParameterEdited { param_id, value })
+        .map(|_| ())
+        .map_err(|e| e.to_string())?;
+
+    // Wait a bit between values
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+  }
+
+  Ok(())
 }
 
 /// Start a morph between two snaps
@@ -100,7 +136,6 @@ async fn start_morph(from_snap: usize, to_snap: usize, duration_bars: u8, curve_
     _ => MorphCurve::Linear,
   };
 
-  // Fix: Discard the usize result
   state.event_bus.publish(Event::MorphInitiated {
     from_snap,
     to_snap,
@@ -166,7 +201,7 @@ async fn add_snap(bank_id: usize, name: String, description: String, state: Stat
     return Err("Bank ID out of range".to_string());
   }
 
-  // Fix: Store the parameter count before the mutable borrow
+  // Store the parameter count before the mutable borrow
   let param_count = state_guard.project.parameters.len();
 
   // Now use the stored value
@@ -181,10 +216,28 @@ async fn add_snap(bank_id: usize, name: String, description: String, state: Stat
   Ok(())
 }
 
-// Do not include the Pro feature for now
-// We'll add it later once the basic features work
+/// Update a snap's description
+#[tauri::command]
+async fn update_snap_description(bank_id: usize, snap_id: usize, description: String, state: State<'_, AppState>) -> Result<(), String> {
+  let mut state_guard = state.shared_state.write().unwrap();
 
-// Listen for events and notify the frontend
+  if bank_id >= state_guard.project.banks.len() {
+    return Err("Bank ID out of range".to_string());
+  }
+
+  let bank = &mut state_guard.project.banks[bank_id];
+
+  if snap_id >= bank.snaps.len() {
+    return Err("Snap ID out of range".to_string());
+  }
+
+  let snap = &mut bank.snaps[snap_id];
+  snap.description = description;
+
+  Ok(())
+}
+
+// Set up event listeners and forward events to the frontend
 fn setup_event_listener(window: Window, event_bus: EventBus) {
   let mut rx = event_bus.subscribe();
 
@@ -201,6 +254,9 @@ fn setup_event_listener(window: Window, event_bus: EventBus) {
 
 #[tokio::main]
 async fn main() {
+  // Set up tracing for logging
+  tracing_subscriber::fmt::init();
+
   // Initialize application
   let mut app = App::new().expect("Failed to create application");
   app.init().expect("Failed to initialize application");
@@ -219,14 +275,14 @@ async fn main() {
         let window = app.get_window("main").unwrap();
 
         // Set up event listeners - use the cloned event_bus
-        setup_event_listener(window, setup_event_bus.clone());
+        setup_event_listener(window, setup_event_bus);
 
         Ok(())
       })
       .manage(AppState {
         app: Mutex::new(app),
-        event_bus: event_bus, // Original event_bus is still available here
-        shared_state: shared_state.clone(),
+        event_bus,
+        shared_state,
       })
       .invoke_handler(
         tauri::generate_handler![
@@ -243,7 +299,10 @@ async fn main() {
               set_openai_api_key,
               add_parameter,
               update_parameter,
-              add_snap
+              add_snap,
+              update_snap_description,
+              set_controller,
+              send_wiggle
           ]
       )
       .run(tauri::generate_context!())

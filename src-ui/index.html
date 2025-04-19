@@ -4,262 +4,111 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Snap-Blaster</title>
-    <style>
-        body {
-            font-family: system-ui, sans-serif;
-            background-color: #18181b;
-            color: #f4f4f5;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            margin: 0;
-            padding: 0;
-        }
-        header {
-            background-color: #27272a;
-            padding: 8px 12px;
-            border-bottom: 1px solid #3f3f46;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.75rem;
-        }
-        header .left-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        header .right-group {
-            display: flex;
-            gap: 6px;
-        }
-        .content {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 0;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        .welcome {
-            text-align: center;
-            padding: 24px;
-        }
-        .button-group {
-            display: flex;
-            gap: 12px;
-            margin-top: 24px;
-        }
-        button {
-            background-color: #3f3f46;
-            color: white;
-            border: 1px solid #52525b;
-            padding: 6px 12px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 0.75rem;
-        }
-        button:hover {
-            background-color: #52525b;
-        }
-        .controller-select {
-            background-color: #3f3f46;
-            color: white;
-            border: 1px solid #52525b;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 0.75rem;
-        }
-        .link-status {
-            color: #4ade80; /* green-400 */
-        }
-        .app-title {
-            font-weight: 600;
-            letter-spacing: 0.05em;
-        }
-        .primary-button {
-            background-color: #f97316; /* orange-500 */
-            border: 1px solid #f97316;
-        }
-        .primary-button:hover {
-            background-color: #ea580c; /* orange-600 */
-        }
-        h1 {
-            font-size: 1.875rem;
-            margin-bottom: 12px;
-        }
-        p {
-            margin-bottom: 24px;
-            opacity: 0.8;
-        }
-
-        /* View container styles */
-        .view-container {
-            width: 100%;
-            height: 100%;
-            display: none;
-        }
-        .editor-layout {
-            display: flex;
-            width: 100%;
-            height: 100%;
-        }
-        .sidebar {
-            width: 240px;
-            background-color: #27272a;
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            border-right: 1px solid #3f3f46;
-        }
-        .launchpad-grid {
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            gap: 2px;
-            background-color: #18181b;
-            padding: 4px;
-            border: 1px solid #3f3f46;
-        }
-        .launchpad-pad {
-            width: 28px;
-            height: 28px;
-            background-color: #3f3f46;
-            border-radius: 2px;
-            cursor: pointer;
-        }
-        .launchpad-pad:hover {
-            border: 1px solid #d4d4d8;
-        }
-        .parameter-panel {
-            flex: 1;
-            padding: 12px;
-            overflow-y: auto;
-        }
-        .snap-info textarea {
-            width: 100%;
-            height: 100px;
-            background-color: #3f3f46;
-            border: 1px solid #52525b;
-            color: white;
-            padding: 8px;
-            resize: none;
-            font-size: 0.75rem;
-        }
-        .param-config-layout {
-            padding: 12px;
-            width: 100%;
-        }
-
-        /* Parameter slider styling */
-        .param-row {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 8px;
-            margin-bottom: 8px;
-            padding: 8px;
-            border: 1px solid #3f3f46;
-            background-color: #27272a;
-        }
-        .param-row:nth-child(even) {
-            background-color: #2d2d31;
-        }
-        .param-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
-        }
-        .param-name {
-            font-weight: 500;
-        }
-        .param-value {
-            color: #a1a1aa;
-        }
-
-        /* Slider styling */
-        input[type=range] {
-            -webkit-appearance: none;
-            width: 100%;
-            height: 6px;
-            background: #3f3f46;
-            border-radius: 3px;
-            margin: 8px 0;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 14px;
-            width: 14px;
-            border-radius: 50%;
-            background: #f97316;
-            cursor: pointer;
-        }
-        input[type=range]::-moz-range-thumb {
-            height: 14px;
-            width: 14px;
-            border-radius: 50%;
-            background: #f97316;
-            cursor: pointer;
-            border: none;
-        }
-        input[type=range]::-webkit-slider-thumb:hover {
-            box-shadow: 0 0 0 2px #f97316;
-        }
-        input[type=range]::-moz-range-thumb:hover {
-            box-shadow: 0 0 0 2px #f97316;
-        }
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<!-- Header Bar -->
 <header>
     <div class="left-group">
-        <span class="app-title">SNAP‑BLASTER</span>
-        <select class="controller-select">
+        <div class="app-title">SNAP-BLASTER</div>
+        <select id="controller-select" class="controller-select">
             <option>Launchpad X</option>
             <option>Launchpad Mini</option>
             <option>Push 2</option>
             <option>APC Mini</option>
         </select>
-        <span class="link-status">Link: Connected</span>
+        <div class="link-status">Link: Connected</div>
     </div>
     <div class="right-group">
-        <button id="snap-btn">🎛️ Snap</button>
-        <button id="conf-btn">🎚️ Conf</button>
-        <button id="save-btn">💾 Save</button>
-        <button id="load-btn">📂 Load</button>
+
+        <button id="ai-btn" class="header-btn">🔮 AI</button>
+        <button id="snap-btn" class="header-btn">🎛️ Snap</button>
+        <button id="conf-btn" class="header-btn">🎚️ Conf</button>
+        <button id="save-btn" class="header-btn">💾 Save</button>
+        <button id="load-btn" class="header-btn">📂 Load</button>
+
     </div>
 </header>
 
-<div class="content">
-    <div class="welcome">
-        <h1>Welcome to Snap-Blaster</h1>
-        <p>MIDI CC snapshot controller for digital audio workstations</p>
-        <div class="button-group">
-            <button id="new-project-btn" class="primary-button">New Project</button>
-            <button id="load-project-btn">Load Project</button>
+<!-- Main Content -->
+<main>
+    <!-- Welcome View -->
+    <div id="welcome-view" class="welcome-view">
+        <div class="welcome-content">
+            <h1>Welcome to Snap-Blaster</h1>
+            <p>MIDI CC snapshot controller for digital audio workstations</p>
+            <div class="button-group">
+                <button id="new-project-btn" class="primary-btn">New Project</button>
+                <button id="load-project-btn" class="secondary-btn">Load Project</button>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- Include the Tauri API -->
-<script>
-    // Tauri global object (will be injected by Tauri)
-    window.__TAURI__ = window.__TAURI__ || {
-        tauri: {
-            invoke: async (cmd, args) => console.log(`Mock invoke: ${cmd}`, args)
-        },
-        dialog: {
-            open: async (options) => `/mock/path/project.sb`,
-            save: async (options) => `/mock/path/project.sb`
-        },
-        event: {
-            listen: (event, callback) => {}
-        }
-    };
-</script>
+    <!-- Editor View -->
+    <div id="editor-view" class="editor-view hidden">
+        <div class="editor-layout">
+            <!-- Left Sidebar - Grid and Project Info -->
+            <div class="sidebar">
+                <div id="grid-container" class="grid-container">
+                    <!-- Grid will be generated here -->
+                </div>
 
-<!-- Include our main JS file -->
-<script src="main.js"></script>
+                <div class="project-info">
+                    <div class="info-row">
+                        <div class="info-label">Project:</div>
+                        <div id="project-name" class="info-value">New Project</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Bank:</div>
+                        <div id="bank-name" class="info-value">Default Bank</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Snap:</div>
+                        <div id="snap-name" class="info-value">Initial Snap</div>
+                    </div>
+                </div>
+
+                <div class="description-container">
+                        <textarea id="snap-description" class="snap-description"
+                                  placeholder="Snap description...">A starting point</textarea>
+                </div>
+            </div>
+
+            <!-- Right Content - Parameters -->
+            <div class="parameter-panel">
+                <div class="tabs-container">
+                    <button id="tab-1-16" class="tab-btn active">1-16</button>
+                    <button id="tab-17-32" class="tab-btn">17-32</button>
+                    <button id="tab-33-48" class="tab-btn">33-48</button>
+                    <button id="tab-49-64" class="tab-btn">49-64</button>
+                </div>
+                <div id="parameters-container" class="parameters-container">
+                    <!-- Parameters will be generated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config View -->
+    <div id="config-view" class="config-view hidden">
+        <div class="config-header">
+            <h2>Parameter Configuration</h2>
+            <button id="add-param-btn" class="primary-btn">+ Add Parameter</button>
+        </div>
+        <div class="config-table">
+            <div class="config-table-header">
+                <div class="col-name">Name</div>
+                <div class="col-desc">Description</div>
+                <div class="col-cc">CC Number</div>
+                <div class="col-actions"></div>
+            </div>
+            <div id="config-params-container" class="config-params-container">
+                <!-- Parameter rows will be generated here -->
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="main.js" type="module"></script>
 </body>
 </html>

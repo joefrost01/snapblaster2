@@ -68,11 +68,11 @@
       {
         "fullscreen": false,
         "height": 720,
-        "resizable": true,
+        "resizable": false,
         "title": "SNAP-BLASTER",
-        "width": 1280,
+        "width": 1040,
         "minWidth": 960,
-        "minHeight": 600
+        "minHeight": 761
       }
     ]
   }
