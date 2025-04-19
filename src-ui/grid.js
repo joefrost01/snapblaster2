@@ -1,4 +1,3 @@
-// grid.js - Grid visualization
 import { appState, selectSnap, createNewSnap } from './state.js';
 
 // Create and update the launchpad grid
@@ -52,8 +51,13 @@ export function createGrid() {
                 // Store the snap index in the element's data attribute
                 pad.dataset.snapIndex = snapIndex;
 
-                // Check if a snap exists at this index
-                const hasSnap = snapIndex < appState.project.banks[appState.currentBank].snaps.length;
+                // Access the snap if it exists
+                const bank = appState.project.banks[appState.currentBank];
+
+                // Check if a snap exists at this position
+                const hasSnap = snapIndex < bank.snaps.length &&
+                              bank.snaps[snapIndex] &&
+                              bank.snaps[snapIndex].name !== '';
 
                 if (hasSnap && snapIndex === appState.currentSnap) {
                     pad.classList.add('active');
@@ -111,6 +115,15 @@ export function createGrid() {
             
             .grid-pad.has-snap {
                 background-color: #4b5563;
+            }
+            
+            .grid-pad.active {
+                background-color: #f97316 !important;
+                border: 2px solid #ea580c;
+            }
+            
+            .grid-pad.empty:hover {
+                border-color: #f97316;
             }
         `;
         document.head.appendChild(style);

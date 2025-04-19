@@ -520,12 +520,12 @@ const api = {
     },
 
     // Add snap
-    async addSnap(bankId, name, description) {
+    async addSnap(bankId, padIndex, name, description) {
         if (!tauriReady) {
             return new Promise((resolve, reject) => {
                 whenTauriReady(async () => {
                     try {
-                        await this.addSnap(bankId, name, description);
+                        await this.addSnap(bankId, padIndex, name, description);
                         resolve();
                     } catch (err) {
                         reject(err);
@@ -535,7 +535,7 @@ const api = {
         }
 
         try {
-            await invoke('add_snap', { bankId, name, description });
+            await invoke('add_snap', { bankId, padIndex, name, description });
         } catch (err) {
             console.error('Error adding snap:', err);
             throw err;

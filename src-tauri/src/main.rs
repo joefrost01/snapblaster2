@@ -281,6 +281,7 @@ async fn update_parameter(
 #[tauri::command]
 async fn add_snap(
     bank_id: usize,
+    pad_index: usize,
     name: String,
     description: String,
     state: State<'_, AppState>,
@@ -294,14 +295,24 @@ async fn add_snap(
     // Store the parameter count before the mutable borrow
     let param_count = state_guard.project.parameters.len();
 
-    // Now use the stored value
+    // Get the bank
     let bank = &mut state_guard.project.banks[bank_id];
 
-    bank.snaps.push(Snap {
+    // Ensure we have space for this snap position
+    if pad_index >= bank.snaps.len() {
+        bank.snaps.resize(pad_index + 1, Snap {
+            name: String::new(),
+            description: String::new(),
+            values: vec![],
+        });
+    }
+
+    // Set the snap at the specified pad position
+    bank.snaps[pad_index] = Snap {
         name,
         description,
         values: vec![64; param_count], // Default all values to middle
-    });
+    };
 
     Ok(())
 }

@@ -336,16 +336,17 @@ impl MidiService {
     fn send_snap_values(state: &SharedState, controller: &Arc<Mutex<Box<dyn MidiGridController>>>) {
         let state_guard = state.read().unwrap();
 
-        if state_guard.current_bank >= state_guard.project.banks.len()
-            || state_guard.current_snap
-                >= state_guard.project.banks[state_guard.current_bank]
-                    .snaps
-                    .len()
-        {
+        if state_guard.current_bank >= state_guard.project.banks.len() {
             return;
         }
 
         let bank = &state_guard.project.banks[state_guard.current_bank];
+
+        // Ensure the snap exists at this index
+        if state_guard.current_snap >= bank.snaps.len() || bank.snaps[state_guard.current_snap].name.is_empty() {
+            return;
+        }
+
         let snap = &bank.snaps[state_guard.current_snap];
 
         // Lock the controller to send CC values

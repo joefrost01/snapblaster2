@@ -151,7 +151,11 @@ export async function selectSnap(snapIndex) {
         // Then make the backend call
         await api.selectSnap(appState.currentBank, snapIndex);
 
-        // The event listener will update the parameters when the backend confirms
+        // Update parameters display with the correct values
+        import('./parameters.js').then(module => {
+            module.updateParameters();
+        });
+
     } catch (error) {
         console.error('Error selecting snap:', error);
         // Revert to previous state on error
@@ -167,15 +171,16 @@ export async function createNewSnap(snapIndex) {
     if (!appState.project) return;
 
     try {
-        console.log("Creating new snap at index:", snapIndex);
+        console.log("Creating new snap at pad position:", snapIndex);
 
         // Disable UI during operation to prevent multiple clicks
         document.body.classList.add('processing');
 
-        // Create the new snap with a name based on its position
+        // Create the new snap with pad information
         await api.addSnap(
             appState.currentBank,
-            `Snap ${snapIndex + 1}`,
+            snapIndex,
+            `Snap at Pad ${snapIndex + 1}`,
             "New snap"
         );
 
@@ -184,23 +189,24 @@ export async function createNewSnap(snapIndex) {
         if (updatedProject) {
             appState.project = updatedProject;
 
-            // Calculate the actual index of the new snap
-            // It might be at the end rather than exactly at snapIndex
-            const actualIndex = appState.project.banks[appState.currentBank].snaps.length - 1;
-
-            console.log("New snap created, selecting it at index:", actualIndex);
+            console.log("New snap created, selecting it at pad index:", snapIndex);
 
             // Select the new snap
-            appState.currentSnap = actualIndex;
-            await selectSnap(actualIndex);
+            appState.currentSnap = snapIndex;
+            await selectSnap(snapIndex);
 
             // Refresh the grid to show the new snap
             import('./grid.js').then(module => {
                 module.createGrid();
             });
 
+            // Refresh the parameters display
+            import('./parameters.js').then(module => {
+                module.updateParameters();
+            });
+
             // Show a notification
-            showSuccessNotification(`Created new snap at position ${actualIndex + 1}`);
+            showSuccessNotification(`Created new snap at pad position ${snapIndex + 1}`);
         }
     } catch (error) {
         console.error('Error creating new snap:', error);

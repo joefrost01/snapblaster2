@@ -179,109 +179,50 @@ async function pasteToCurrentSnap() {
             appState.project = refreshedProject;
         }
 
-        // Get the latest bank information
-        const bank = appState.project.banks[appState.currentBank];
+        // Update the description
+        await api.updateSnapDescription(
+            appState.currentBank,
+            appState.currentSnap,
+            copiedSnap.description
+        );
 
-        // Check if we need to create a new snap
-        const isNewSnap = appState.currentSnap >= bank.snaps.length;
+        // Make sure our parameter values array matches the actual parameters length
+        const paramLength = appState.project.parameters.length;
+        const valuesCopy = [...copiedSnap.values];
 
-        if (isNewSnap) {
-            console.log("Creating new snap for paste target");
-
-            // Create a new snap
-            await api.addSnap(
-                appState.currentBank,
-                copiedSnap.name,
-                copiedSnap.description
-            );
-
-            // Get the updated project data to get the new snap index
-            const updatedProject = await api.getProject();
-            if (updatedProject) {
-                appState.project = updatedProject;
-                const newSnapIndex = appState.project.banks[appState.currentBank].snaps.length - 1;
-
-                // Make sure our parameter values array matches the actual parameters length
-                const paramLength = updatedProject.parameters.length;
-                const valuesCopy = [...copiedSnap.values];
-
-                // Resize the values array if needed
-                if (valuesCopy.length > paramLength) {
-                    valuesCopy.length = paramLength; // Truncate
-                } else while (valuesCopy.length < paramLength) {
-                    valuesCopy.push(64); // Extend with default values
-                }
-
-                // Select the newly created snap
-                console.log("Selecting new snap at index:", newSnapIndex);
-                await selectSnap(newSnapIndex);
-
-                // Add a small delay before updating parameters to ensure selection is complete
-                await new Promise(resolve => setTimeout(resolve, 200));
-
-                // Update the parameter values one by one (more reliable than batch update)
-                for (let i = 0; i < valuesCopy.length; i++) {
-                    await api.editParameter(i, valuesCopy[i]);
-                    // Small delay between updates
-                    await new Promise(resolve => setTimeout(resolve, 20));
-                }
-
-                // Refresh the grid to show the new snap
-                import('./grid.js').then(module => {
-                    module.createGrid();
-                });
-
-                // Refresh the parameters display
-                import('./parameters.js').then(module => {
-                    module.updateParameters();
-                });
-
-                // Show success message
-                showNotification('Created new snap from copied values', 'success');
-            }
-        } else {
-            // Update the existing snap
-            console.log("Updating existing snap with copied values");
-
-            // Update the description
-            await api.updateSnapDescription(
-                appState.currentBank,
-                appState.currentSnap,
-                copiedSnap.description
-            );
-
-            // Make sure our parameter values array matches the actual parameters length
-            const paramLength = appState.project.parameters.length;
-            const valuesCopy = [...copiedSnap.values];
-
-            // Resize the values array if needed
-            if (valuesCopy.length > paramLength) {
-                valuesCopy.length = paramLength; // Truncate
-            } else while (valuesCopy.length < paramLength) {
-                valuesCopy.push(64); // Extend with default values
-            }
-
-            // Update all parameter values one by one
-            for (let i = 0; i < valuesCopy.length; i++) {
-                await api.editParameter(i, valuesCopy[i]);
-                // Small delay between updates
-                await new Promise(resolve => setTimeout(resolve, 20));
-            }
-
-            // Get the updated project data
-            const updatedProject = await api.getProject();
-            if (updatedProject) {
-                appState.project = updatedProject;
-            }
-
-            // Refresh the parameters display
-            import('./parameters.js').then(module => {
-                module.updateParameters();
-            });
-
-            // Show success message
-            showNotification('Updated snap with copied values', 'success');
+        // Resize the values array if needed
+        if (valuesCopy.length > paramLength) {
+            valuesCopy.length = paramLength; // Truncate
+        } else while (valuesCopy.length < paramLength) {
+            valuesCopy.push(64); // Extend with default values
         }
+
+        // Update all parameter values one by one
+        for (let i = 0; i < valuesCopy.length; i++) {
+            await api.editParameter(i, valuesCopy[i]);
+            // Small delay between updates
+            await new Promise(resolve => setTimeout(resolve, 20));
+        }
+
+        // Get the updated project data
+        const updatedProject = await api.getProject();
+        if (updatedProject) {
+            appState.project = updatedProject;
+        }
+
+        // Refresh the parameters display
+        import('./parameters.js').then(module => {
+            module.updateParameters();
+        });
+
+        // Update the UI description field
+        const descriptionElement = window.snapElements.snapDescription;
+        if (descriptionElement) {
+            descriptionElement.value = copiedSnap.description;
+        }
+
+        // Show success message
+        showNotification('Snap values pasted successfully', 'success');
     } catch (error) {
         console.error('Error during paste operation:', error);
         showNotification('Error during paste operation', 'error');
