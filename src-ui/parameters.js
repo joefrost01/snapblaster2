@@ -1,5 +1,6 @@
 // parameters.js - Parameter editing UI
 import { appState, updateParameterValue } from './state.js';
+import { api } from './tauri-api.js';
 
 // Update parameters based on current tab
 export function updateParameters() {
@@ -110,9 +111,14 @@ function createParameterCell(param, value, index) {
 }
 
 // Send wiggle values for MIDI learn
-function wiggleParameter(cc) {
+async function wiggleParameter(cc) {
     console.log(`Wiggling parameter CC ${cc}`);
 
-    // In a real app, this would send alternating values to the MIDI device
-    // For now, just log it
+    try {
+        // Send a pattern of values to help with MIDI learn in the DAW
+        const values = [0, 127, 64, 100, 30, 64]; // A distinct pattern
+        await api.sendWiggle(cc, values);
+    } catch (error) {
+        console.error('Error sending wiggle values:', error);
+    }
 }

@@ -2,6 +2,7 @@
 import { appState, selectSnap, updateParameterValue, updateSnapDescription } from './state.js';
 import { switchView } from './views.js';
 import { addParameter, setConfigPage } from './config.js';
+import { api, fileDialogs, eventBus } from './tauri-api.js';
 
 // Global state for copy/paste
 let copiedSnap = null;
@@ -70,8 +71,56 @@ export function setupEventListeners() {
     document.getElementById('copy').addEventListener('click', copyCurrentSnap);
     document.getElementById('paste').addEventListener('click', pasteToCurrentSnap);
 
-    // Create mock project for testing (temporary)
-    createMockProject();
+    // Controller dropdown
+    const controllerSelect = document.getElementById('controller-select');
+    if (controllerSelect) {
+        controllerSelect.addEventListener('change', async (e) => {
+            try {
+                await api.setController(e.target.value);
+                console.log(`Controller set to ${e.target.value}`);
+            } catch (error) {
+                console.error('Error setting controller:', error);
+            }
+        });
+    }
+
+    // Initialize controller dropdown with actual device
+    initializeControllerDropdown();
+}
+
+// Initialize controller dropdown with the current controller
+async function initializeControllerDropdown() {
+    const controllerSelect = document.getElementById('controller-select');
+    if (!controllerSelect) return;
+
+    try {
+        // Get available MIDI inputs
+        const inputs = await api.getMidiInputs();
+
+        // Clear existing options
+        controllerSelect.innerHTML = '';
+
+        // Add options for each available controller
+        inputs.forEach(input => {
+            const option = document.createElement('option');
+            option.value = input;
+            option.textContent = input;
+            controllerSelect.appendChild(option);
+        });
+
+        // Add generic option
+        const genericOption = document.createElement('option');
+        genericOption.value = 'Generic';
+        genericOption.textContent = 'Generic (No Hardware)';
+        controllerSelect.appendChild(genericOption);
+
+        // Set the current selection based on project
+        if (appState.project && appState.project.controller) {
+            controllerSelect.value = appState.project.controller;
+        }
+    } catch (error) {
+        console.error('Error initializing controller dropdown:', error);
+    }
 }
 
 // Copy the current snap
@@ -89,131 +138,247 @@ function copyCurrentSnap() {
     };
 
     console.log('Copied snap:', copiedSnap);
-    alert('Snap copied');
+
+    // Add a visual feedback that snap was copied
+    const activeSnap = document.querySelector('.grid-pad.active');
+    if (activeSnap) {
+        activeSnap.classList.add('snap-copied');
+        setTimeout(() => {
+            activeSnap.classList.remove('snap-copied');
+        }, 1000);
+    }
 }
 
 // Paste to the current snap or create a new one
-function pasteToCurrentSnap() {
+async function pasteToCurrentSnap() {
     if (!appState.project || !copiedSnap) {
-        alert('No snap has been copied');
+        showNotification('No snap has been copied', 'warning');
         return;
     }
 
+    // Get the latest bank information
     const bank = appState.project.banks[appState.currentBank];
 
-    // Create a new snap with the copied values if we're at the end
-    if (appState.currentSnap >= bank.snaps.length) {
-        bank.snaps.push({
-            name: copiedSnap.name,
-            description: copiedSnap.description,
-            values: [...copiedSnap.values]
-        });
+    // Check if we need to create a new snap
+    const isNewSnap = appState.currentSnap >= bank.snaps.length;
 
-        // Select the new snap
-        selectSnap(bank.snaps.length - 1);
-    } else {
-        // Otherwise overwrite the current snap
-        bank.snaps[appState.currentSnap].name = copiedSnap.name;
-        bank.snaps[appState.currentSnap].description = copiedSnap.description;
-        bank.snaps[appState.currentSnap].values = [...copiedSnap.values];
+    try {
+        if (isNewSnap) {
+            console.log("Creating new snap for paste target");
 
-        // Refresh the UI
-        selectSnap(appState.currentSnap);
+            // Create a new snap
+            await api.addSnap(
+                appState.currentBank,
+                copiedSnap.name,
+                copiedSnap.description
+            );
+
+            // Get the updated project data to get the new snap index
+            const updatedProject = await api.getProject();
+            if (updatedProject) {
+                appState.project = updatedProject;
+                const newSnapIndex = appState.project.banks[appState.currentBank].snaps.length - 1;
+
+                // Select the newly created snap
+                console.log("Selecting new snap at index:", newSnapIndex);
+                await selectSnap(newSnapIndex);
+
+                // Update the parameter values
+                console.log("Updating parameter values for new snap");
+                for (let i = 0; i < copiedSnap.values.length; i++) {
+                    if (i < appState.project.parameters.length) {
+                        await api.editParameter(i, copiedSnap.values[i]);
+                    }
+                }
+
+                // Refresh the grid to show the new snap
+                import('./grid.js').then(module => {
+                    module.createGrid();
+                });
+
+                // Show success message
+                showNotification('Created new snap from copied values', 'success');
+            }
+        } else {
+            // Update the existing snap
+            console.log("Updating existing snap with copied values");
+
+            // Update the description
+            await api.updateSnapDescription(
+                appState.currentBank,
+                appState.currentSnap,
+                copiedSnap.description
+            );
+
+            // Update all parameter values
+            for (let i = 0; i < copiedSnap.values.length; i++) {
+                if (i < appState.project.parameters.length) {
+                    await api.editParameter(i, copiedSnap.values[i]);
+                }
+            }
+
+            // Get the updated project data
+            const updatedProject = await api.getProject();
+            if (updatedProject) {
+                appState.project = updatedProject;
+            }
+
+            // Refresh the parameters display
+            import('./parameters.js').then(module => {
+                module.updateParameters();
+            });
+
+            // Show success message
+            showNotification('Updated snap with copied values', 'success');
+        }
+    } catch (error) {
+        console.error('Error during paste operation:', error);
+        showNotification('Error during paste operation', 'error');
     }
-
-    console.log('Pasted snap values');
 }
 
 // Create a new project
-function createNewProject() {
+async function createNewProject() {
     console.log('Creating new project...');
 
-    // In a real app, this would call the backend
-    // For now, just create a basic project
-    appState.project = {
-        project_name: "New Project",
-        controller: "Launchpad X",
-        openai_api_key: null,
-        banks: [{
-            name: "Default Bank",
-            snaps: [{
-                name: "Initial Snap",
-                description: "A starting point",
-                values: Array(64).fill(64)
-            }]
-        }],
-        parameters: []
-    };
+    try {
+        await api.newProject();
 
-    // Switch to editor view
-    switchView('editor');
+        // Force refresh the state
+        const project = await api.getProject();
+        if (project) {
+            appState.project = project;
+
+            // Switch to editor view and refresh UI
+            import('./views.js').then(module => {
+                module.switchView('editor');
+            });
+
+            // Show a notification
+            showNotification("New project created", 'success');
+        } else {
+            console.error("Failed to get project after creation");
+            showNotification("Failed to create new project", 'error');
+        }
+    } catch (error) {
+        console.error('Error creating new project:', error);
+        showNotification("Error creating new project", 'error');
+    }
 }
 
 // Load a project from file
-function loadProject() {
-    console.log('Load project clicked');
+async function loadProject() {
+    console.log('Loading project...');
 
-    // In a real app, this would open a file dialog
-    // For now, just use the mock project
-    createMockProject();
+    try {
+        const filePath = await fileDialogs.loadProjectDialog();
+        if (filePath) {
+            console.log("Project loaded from:", filePath);
 
-    // Switch to editor view
-    switchView('editor');
+            // Force refresh the state from backend
+            const project = await api.getProject();
+            if (project) {
+                appState.project = project;
+
+                // Switch to editor view and refresh UI
+                import('./views.js').then(module => {
+                    module.switchView('editor');
+                });
+
+                // Show a notification
+                showNotification(`Project loaded: ${filePath.split('/').pop()}`, 'success');
+            } else {
+                console.error("Failed to get project after loading");
+                showNotification("Failed to load project", 'error');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading project:', error);
+        showNotification("Error loading project", 'error');
+    }
+}
+
+// Helper function to show notifications
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+
+    // Add to DOM
+    document.body.appendChild(notification);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        notification.classList.add('fadeout');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+        }, 500);
+    }, 3000);
 }
 
 // Save the current project
-function saveProject() {
-    console.log('Save project clicked');
+async function saveProject() {
+    console.log('Saving project...');
 
-    // In a real app, this would open a save dialog
-    console.log('Current project state:', appState.project);
+    if (!appState.project) {
+        showNotification('No project to save', 'warning');
+        return;
+    }
 
-    alert('Project saved (mock)');
+    try {
+        const path = await fileDialogs.saveProjectDialog();
+        if (path) {
+            console.log(`Project saved to: ${path}`);
+
+            // Show success notification
+            showNotification(`Project saved: ${path.split('/').pop()}`, 'success');
+
+            // Also update the project name in the UI if it's based on the file
+            const fileName = path.split('/').pop().replace('.sb', '');
+
+            // Only update if using default name
+            if (appState.project.project_name === "New Project") {
+                // Update the project name
+                appState.project.project_name = fileName;
+
+                // Update the UI
+                const projectNameElement = document.getElementById('project-name');
+                if (projectNameElement) {
+                    projectNameElement.textContent = fileName;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error saving project:', error);
+        showNotification('Error saving project', 'error');
+    }
 }
 
 // Generate AI values
-function generateAIValues() {
-    console.log('Generate AI values clicked');
+async function generateAIValues() {
+    if (!appState.project) return;
 
-    // In a real app, this would call the OpenAI API
-    alert('AI value generation is not implemented in this demo');
-}
+    // Check if we have an OpenAI API key
+    if (!appState.project.openai_api_key) {
+        const apiKey = prompt('Please enter your OpenAI API key:');
+        if (apiKey) {
+            try {
+                await api.setOpenAIApiKey(apiKey);
+            } catch (error) {
+                console.error('Error setting OpenAI API key:', error);
+                return;
+            }
+        } else {
+            return; // User canceled
+        }
+    }
 
-// Create a mock project for testing
-function createMockProject() {
-    appState.project = {
-        project_name: "Demo Project",
-        controller: "Launchpad X",
-        openai_api_key: null,
-        banks: [{
-            name: "Default Bank",
-            snaps: [
-                {
-                    name: "Intro",
-                    description: "Ambient intro section",
-                    values: [64, 32, 96, 48, 60, 75, 88, 64]
-                },
-                {
-                    name: "Drop",
-                    description: "Main drop section",
-                    values: [100, 64, 120, 80, 90, 110, 64, 50]
-                },
-                {
-                    name: "Breakdown",
-                    description: "Atmospheric breakdown",
-                    values: [32, 110, 64, 20, 40, 85, 60, 30]
-                }
-            ]
-        }],
-        parameters: [
-            { name: "Bass Level", description: "Main bass volume", cc: 1 },
-            { name: "Reverb Mix", description: "Wet/dry mix for reverb", cc: 2 },
-            { name: "Delay Time", description: "Delay time in ms", cc: 3 },
-            { name: "Filter Cutoff", description: "Main filter cutoff frequency", cc: 4 },
-            { name: "LFO Rate", description: "Modulation rate", cc: 5 },
-            { name: "LFO Depth", description: "Modulation amount", cc: 6 },
-            { name: "Distortion", description: "Distortion amount", cc: 7 },
-            { name: "Master Volume", description: "Overall volume", cc: 8 }
-        ]
-    };
+    try {
+        await api.generateAIValues(appState.currentBank, appState.currentSnap);
+        console.log('AI value generation requested');
+    } catch (error) {
+        console.error('Error generating AI values:', error);
+    }
 }

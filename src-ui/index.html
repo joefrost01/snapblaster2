@@ -5,30 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Snap-Blaster</title>
     <link rel="stylesheet" href="styles.css">
+    <script type="module" src="./main.js"></script>
 </head>
 <body>
 <!-- Header Bar -->
 <header>
     <div class="left-group">
         <select id="controller-select" class="controller-select">
-            <option>Launchpad Mini</option>
-            <option>Launchpad X</option>
-            <option>Launchpad Pro</option>
-            <option>Push 2</option>
-            <option>Push 3</option>
-            <option>APC Mini</option>
+            <option value="Generic">Generic (No Hardware)</option>
+            <!-- MIDI controllers will be populated dynamically -->
         </select>
-        <div class="bpm-label" ><label>BPM: </label><input class="bpm"></div>
-        <div class="link-status">Link: Connected</div>
+        <div class="bpm-label" ><label>BPM: </label><input class="bpm" value="120"></div>
+        <div class="link-status">Link: <span id="link-status-text">Disconnected</span></div>
     </div>
     <div class="right-group">
-
         <button id="ai-btn" class="header-btn">🔮 AI</button>
         <button id="snap-btn" class="header-btn">🎛️ Snap</button>
         <button id="conf-btn" class="header-btn">🎚️ Conf</button>
         <button id="save-btn" class="header-btn">💾 Save</button>
         <button id="load-btn" class="header-btn">📂 Load</button>
-
     </div>
 </header>
 
@@ -71,8 +66,8 @@
                 </div>
 
                 <div class="description-container">
-                        <textarea id="snap-description" class="snap-description"
-                                  placeholder="Snap description...">A starting point</textarea>
+                    <textarea id="snap-description" class="snap-description"
+                              placeholder="Snap description...">A starting point</textarea>
                 </div>
             </div>
 
@@ -83,8 +78,8 @@
                     <button id="tab-17-32" class="tab-btn">17-32</button>
                     <button id="tab-33-48" class="tab-btn">33-48</button>
                     <button id="tab-49-64" class="tab-btn">49-56</button>
-                    <button id="copy" class="tab-btn">copy</button>
-                    <button id="paste" class="tab-btn">paste</button>
+                    <button id="copy" class="tab-btn">Copy</button>
+                    <button id="paste" class="tab-btn">Paste</button>
                 </div>
                 <div id="parameters-container" class="parameters-container">
                     <!-- Parameters will be generated here -->
@@ -110,7 +105,7 @@
                 <div class="col-name">Name</div>
                 <div class="col-desc">Description</div>
                 <div class="col-cc">CC Number</div>
-                <!--                <div class="col-actions"><button id="add-param-btn" class="add-param-btn">+</button></div>-->
+                <div class="col-actions"></div>
             </div>
             <div id="config-params-container" class="config-params-container">
                 <!-- Parameter rows will be generated here -->
@@ -118,7 +113,5 @@
         </div>
     </div>
 </main>
-
-<script src="main.js" type="module"></script>
 </body>
 </html>

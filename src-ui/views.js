@@ -89,15 +89,70 @@ function updateEditorView() {
 
     // Update project info
     elements.projectName.textContent = appState.project.project_name;
-    elements.bankName.textContent = appState.project.banks[appState.currentBank].name;
-    elements.snapName.textContent = appState.project.banks[appState.currentBank].snaps[appState.currentSnap].name;
-    elements.snapDescription.value = appState.project.banks[appState.currentBank].snaps[appState.currentSnap].description;
+
+    if (appState.currentBank < appState.project.banks.length) {
+        elements.bankName.textContent = appState.project.banks[appState.currentBank].name;
+
+        const snaps = appState.project.banks[appState.currentBank].snaps;
+        if (appState.currentSnap < snaps.length) {
+            elements.snapName.textContent = snaps[appState.currentSnap].name;
+            elements.snapDescription.value = snaps[appState.currentSnap].description;
+        } else if (snaps.length > 0) {
+            // If current snap is out of bounds, select the first snap
+            appState.currentSnap = 0;
+            elements.snapName.textContent = snaps[0].name;
+            elements.snapDescription.value = snaps[0].description;
+        } else {
+            // No snaps in this bank
+            elements.snapName.textContent = "No snaps";
+            elements.snapDescription.value = "";
+        }
+    } else if (appState.project.banks.length > 0) {
+        // If current bank is out of bounds, select the first bank
+        appState.currentBank = 0;
+        elements.bankName.textContent = appState.project.banks[0].name;
+
+        if (appState.project.banks[0].snaps.length > 0) {
+            appState.currentSnap = 0;
+            elements.snapName.textContent = appState.project.banks[0].snaps[0].name;
+            elements.snapDescription.value = appState.project.banks[0].snaps[0].description;
+        } else {
+            // No snaps in the first bank
+            elements.snapName.textContent = "No snaps";
+            elements.snapDescription.value = "";
+        }
+    } else {
+        // No banks
+        elements.bankName.textContent = "No banks";
+        elements.snapName.textContent = "No snaps";
+        elements.snapDescription.value = "";
+    }
 
     // Generate grid
     createGrid();
 
     // Update parameters
     updateParameters();
+
+    // Update tab visibility based on number of parameters
+    updateTabVisibility();
+}
+
+// Update tab visibility based on the number of parameters
+function updateTabVisibility() {
+    if (!appState.project) return;
+
+    const paramCount = appState.project.parameters.length;
+    const tabButtons = window.snapElements.tabButtons;
+
+    for (let i = 0; i < tabButtons.length; i++) {
+        const minParamIndex = i * 16;
+        if (minParamIndex < paramCount) {
+            tabButtons[i].classList.remove('disabled');
+        } else {
+            tabButtons[i].classList.add('disabled');
+        }
+    }
 }
 
 // Update the config view

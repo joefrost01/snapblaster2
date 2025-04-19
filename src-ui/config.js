@@ -1,5 +1,6 @@
 // config.js - Parameter configuration UI
 import { appState } from './state.js';
+import { api } from './tauri-api.js';
 
 // Current page for parameter configuration (0-3)
 let currentConfigPage = 0;
@@ -82,16 +83,27 @@ function createParameterRow(param, index) {
     wiggleBtn.className = 'wiggle-btn';
     wiggleBtn.title = 'Send MIDI Wiggle';
     wiggleBtn.textContent = '🎚️';
-    wiggleBtn.addEventListener('click', () => {
-        console.log(`Wiggling parameter CC ${param.cc}`);
-    });
+    wiggleBtn.addEventListener('click', () => wiggleParameter(param.cc));
     row.appendChild(wiggleBtn);
 
     return row;
 }
 
+// Send wiggle pattern
+async function wiggleParameter(cc) {
+    console.log(`Wiggling parameter CC ${cc}`);
+
+    try {
+        // Send a pattern of values to help with MIDI learn in the DAW
+        const values = [0, 127, 64, 100, 30, 64]; // A distinct pattern
+        await api.sendWiggle(cc, values);
+    } catch (error) {
+        console.error('Error sending wiggle values:', error);
+    }
+}
+
 // Update a parameter in the state
-function updateParameter(index) {
+async function updateParameter(index) {
     if (!appState.project) return;
 
     const row = document.querySelector(`.config-param-row[data-param-id="${index}"]`);
@@ -101,16 +113,28 @@ function updateParameter(index) {
     const descInput = row.querySelector('input[type="text"]:nth-of-type(2)');
     const ccInput = row.querySelector('input[type="number"]');
 
-    const param = appState.project.parameters[index];
-    param.name = nameInput.value;
-    param.description = descInput.value;
-    param.cc = parseInt(ccInput.value);
+    try {
+        await api.updateParameter(
+            index,
+            nameInput.value,
+            descInput.value,
+            parseInt(ccInput.value)
+        );
 
-    console.log(`Updated parameter ${index}:`, param);
+        // Update local state
+        const param = appState.project.parameters[index];
+        param.name = nameInput.value;
+        param.description = descInput.value;
+        param.cc = parseInt(ccInput.value);
+
+        console.log(`Updated parameter ${index}:`, param);
+    } catch (error) {
+        console.error('Error updating parameter:', error);
+    }
 }
 
 // Add a new parameter
-export function addParameter() {
+export async function addParameter() {
     if (!appState.project) return;
 
     // Enforce the 64 parameter limit
@@ -126,33 +150,33 @@ export function addParameter() {
         nextCC++;
     }
 
-    // Create new parameter
-    const newParam = {
-        name: `Parameter ${appState.project.parameters.length + 1}`,
-        description: '',
-        cc: nextCC
-    };
+    try {
+        // Call backend to add parameter
+        await api.addParameter(
+            `Parameter ${appState.project.parameters.length + 1}`,
+            '',
+            nextCC
+        );
 
-    // Add to state
-    appState.project.parameters.push(newParam);
+        // Get updated project from backend
+        const project = await api.getProject();
+        if (project) {
+            appState.project = project;
+        }
 
-    // Add default value to each snap
-    appState.project.banks.forEach(bank => {
-        bank.snaps.forEach(snap => {
-            snap.values.push(64); // Default middle value
-        });
-    });
+        // Switch to last page if needed
+        const pageCount = Math.ceil(appState.project.parameters.length / 16);
+        if (pageCount > 0) {
+            setConfigPage(pageCount - 1);
+        } else {
+            // Update UI
+            renderParameterList();
+        }
 
-    // Switch to last page if needed
-    const pageCount = Math.ceil(appState.project.parameters.length / 16);
-    if (pageCount > 0) {
-        setConfigPage(pageCount - 1);
-    } else {
-        // Update UI
-        renderParameterList();
+        console.log('Added new parameter with CC:', nextCC);
+    } catch (error) {
+        console.error('Error adding parameter:', error);
     }
-
-    console.log('Added new parameter:', newParam);
 }
 
 // Set the current config page
