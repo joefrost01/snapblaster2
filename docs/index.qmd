@@ -1,0 +1,58 @@
+---
+title: "Snap-Blaster Documentation"
+subtitle: "MIDI CC snapshot controller for digital audio workstations"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+---
+
+# Welcome to Snap-Blaster
+
+Snap-Blaster is a powerful MIDI CC snapshot controller designed to revolutionize your workflow in digital audio workstations (DAWs) like Ableton Live, Bitwig, Reason, Logic, and others. It enables musicians and producers to manage, edit, and perform complex MIDI automation through an intuitive interface and grid controller integration.
+
+## What is Snap-Blaster?
+
+Snap-Blaster connects with your grid controller (such as Launchpad, Push 2, or APC Mini) to provide instant access to complete MIDI CC automation snapshots. Instead of manually drawing automation or twiddling knobs to recreate settings, you can trigger full parameter states with a single pad press.
+
+## Key Features
+
+### 🎛️ Snapshot Management
+- Store up to 56 snapshots per bank
+- Each snapshot contains up to 64 parameter values
+- Instantly switch between complete automation states
+- Perfect for live performance and studio production
+
+### 🤖 AI-Powered Automation
+- Generate parameter values using artificial intelligence
+- Context-aware suggestions based on your project structure
+- Customizable AI prompting for creative control
+
+### ⚙️ Flexible Configuration
+- Define custom parameters with names and descriptions
+- Map parameters to specific MIDI CC numbers
+- MIDI Learn support for quick hardware integration
+
+### 💾 Project Organization
+- Save and load complete projects (.sb files)
+- Organize snapshots into banks (Pro version: up to 56 banks)
+- Copy and paste snapshots within projects
+
+### 🎵 DAW Integration
+- Works with any DAW that supports MIDI CC automation
+- Ableton Link synchronization for tempo-aware features
+- Linear and advanced morphing between snapshots (Pro feature)
+
+## Getting Started
+
+To begin using Snap-Blaster:
+
+1. Connect your grid controller
+2. Create a new project or load an existing one
+3. Define your parameters in the configuration page
+4. Start creating snapshots by clicking empty pad spaces
+5. Trigger snapshots during performance or production
+
+Snap-Blaster removes the tedium of manual automation, letting you focus on creativity and performance. Whether you're producing in the studio or performing live, Snap-Blaster gives you the power to control complex parameter changes with the press of a button.
+
+Ready to transform your workflow? Let's dive in.

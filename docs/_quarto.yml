@@ -1,0 +1,35 @@
+project:
+  type: website
+
+# Configure the website
+website:
+  #title: "Snap-Blaster"
+  # The navbar brand will display the logo + project name
+  navbar:
+    brand:
+      href: index.qmd
+    logo: "images/logo.png"
+    search: true
+    right:
+
+  # Define the left sidebar navigation structure
+  sidebar:
+    - title: "Documentation"
+      contents:
+        - text: "Introduction"
+          href: index.qmd
+
+# Theme configuration
+format:
+  html:
+    theme:
+      light: flatly
+      dark: darkly
+    toc: true
+    toc-location: right
+    css: styles.css
+
+# (Optional) Execute options if you have code in pages
+execute:
+  warning: false
+  echo: false
