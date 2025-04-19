@@ -9,6 +9,12 @@ pub mod morph;
 pub mod midi {
     pub mod controller;
     pub mod service;
+    pub mod controllers {
+        pub mod launchpad_x;
+        pub mod launchpad_mini;
+        pub mod push_2;
+        pub mod apc_mini;
+    }
 }
 
 // Link integration

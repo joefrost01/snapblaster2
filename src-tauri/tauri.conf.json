@@ -27,7 +27,7 @@
     },
     "bundle": {
       "active": true,
-      "category": "AudioVideo",
+      "category": "Music",
       "copyright": "",
       "deb": {
         "depends": []
