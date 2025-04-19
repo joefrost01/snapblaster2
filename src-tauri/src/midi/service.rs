@@ -1,9 +1,10 @@
-use crate::events::{Event, EventBus};
+use crate::events::{Event, EventBus, EventSubscriber};
 use crate::model::SharedState;
 use crate::midi::controller::{MidiGridController, create_controller};
 use midir::{MidiInput, MidiOutput, Ignore};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
+use tauri::EventHandler;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
@@ -116,73 +117,68 @@ impl MidiService {
 
         // Use the original self in the async block
         let running = self.running.clone();
-        let mut event_receiver = self.event_receiver;
         let controller = self.controller.clone();
         let state = self.state.clone();
         let event_bus = self.event_bus.clone();
 
+        // Create a new event subscriber
+        let event_subscriber = EventSubscriber::new(&self.event_bus, "MidiService");
+
         let handle = tokio::spawn(async move {
-            while *running.lock().unwrap() {
-                match event_receiver.recv().await {
-                    Ok(event) => {
-                        match event {
-                            Event::SnapSelected { bank, snap_id } => {
-                                // Update the current state
-                                {
-                                    let mut state_guard = state.write().unwrap();
-                                    state_guard.current_bank = bank;
-                                    state_guard.current_snap = snap_id;
-                                }
+            // Create a mutable event subscriber for the async task
+            let mut event_subscriber = event_subscriber;
 
-                                // Get a reference to the MidiService to send CC values
-                                // This requires a separate function that doesn't take self ownership
-                                Self::send_snap_values(&state, &controller);
-
-                                // Update the controller LEDs
-                                let mut controller = controller.lock().unwrap();
-                                controller.refresh_state();
-                            },
-                            Event::ParameterEdited { param_id, value } => {
-                                // Update the parameter value in the current snap
-                                {
-                                    let mut state_guard = state.write().unwrap();
-
-                                    // Store indices in local variables first
-                                    let current_bank = state_guard.current_bank;
-                                    let current_snap = state_guard.current_snap;
-
-                                    // Now use the local variables
-                                    let bank = &mut state_guard.project.banks[current_bank];
-                                    let snap = &mut bank.snaps[current_snap];
-
-                                    if param_id < snap.values.len() {
-                                        snap.values[param_id] = value;
-                                    }
-                                }
-
-                                // Send the CC value
-                                if let Ok(param) = Self::get_parameter(&state, param_id) {
-                                    let mut controller_lock = controller.lock().unwrap();
-                                    let _ = controller_lock.send_cc(0, param.cc, value);
-                                }
-                            },
-                            Event::MorphProgressed { progress: _, current_values } => {
-                                // Send all CC values for the current morph state
-                                Self::send_morph_values(&state, &controller, &current_values);
-                            },
-                            Event::Shutdown => {
-                                *running.lock().unwrap() = false;
-                                break;
-                            },
-                            _ => {}
+            // Handle events until shutdown or error
+            event_subscriber.handle_events(|event| {
+                match event {
+                    Event::SnapSelected { bank, snap_id } => {
+                        // Update the current state
+                        {
+                            let mut state_guard = state.write().unwrap();
+                            state_guard.current_bank = bank;
+                            state_guard.current_snap = snap_id;
                         }
-                    },
-                    Err(_) => {
-                        // Channel closed or error
-                        break;
+
+                        // Send CC values
+                        Self::send_snap_values(&state, &controller);
+
+                        // Update the controller LEDs
+                        let mut controller = controller.lock().unwrap();
+                        controller.refresh_state();
                     }
+                    Event::ParameterEdited { param_id, value } => {
+                        // Update the parameter value in the current snap
+                        {
+                            let mut state_guard = state.write().unwrap();
+                            let current_bank = state_guard.current_bank;
+                            let current_snap = state_guard.current_snap;
+                            let bank = &mut state_guard.project.banks[current_bank];
+                            let snap = &mut bank.snaps[current_snap];
+
+                            if param_id < snap.values.len() {
+                                snap.values[param_id] = value;
+                            }
+                        }
+
+                        // Send the CC value
+                        if let Ok(param) = Self::get_parameter(&state, param_id) {
+                            let mut controller_lock = controller.lock().unwrap();
+                            let _ = controller_lock.send_cc(0, param.cc, value);
+                        }
+                    }
+                    Event::MorphProgressed { progress: _, current_values } => {
+                        // Send all CC values for the current morph state
+                        Self::send_morph_values(&state, &controller, &current_values);
+                    }
+                    Event::Shutdown => {
+                        *running.lock().unwrap() = false;
+                        return false; // Stop handling events
+                    }
+                    _ => {}
                 }
-            }
+
+                true // Continue handling events
+            }).await;
         });
 
         (handle, returned_self)
