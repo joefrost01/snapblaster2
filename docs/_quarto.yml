@@ -10,7 +10,7 @@ website:
       href: index.qmd
     logo: "images/logo.png"
     search: true
-    right:
+
 
   # Define the left sidebar navigation structure
   sidebar:
