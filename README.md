@@ -1,4 +1,4 @@
-[![CI Pipeline](https://github.com/joefrost01/snapblaster2/actions/workflows/build.yml/badge.svg)](https://github.com/jeofrost01/snapblaster2/actions/workflows/build.yml)
+[![CI Pipeline](https://github.com/joefrost01/snapblaster2/actions/workflows/build.yml/badge.svg)](https://github.com/joefrost01/snapblaster2/actions/workflows/build.yml)
 [![Quarto Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://joefrost01.github.io/snapblaster2/)
 
 # Snap-Blaster: Functional and Technical Design Document
