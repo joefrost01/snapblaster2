@@ -20,7 +20,13 @@ impl ProjectStorage {
     /// Save the current project to a file
     pub fn save_project(&self, path: &Path) -> Result<(), Box<dyn Error>> {
         let state_guard = self.state.read().unwrap();
+
+        // Make a fresh clone of the project to ensure we have all the data
         let project = state_guard.project.clone();
+
+        // Ensure we're getting the parameters and all data from the shared state
+        println!("Saving project with {} parameters", project.parameters.len());
+        println!("Current project state: {:?}", project);
 
         // Create the file
         let file = File::create(path)?;
@@ -32,6 +38,7 @@ impl ProjectStorage {
         // Publish event that project was saved
         let _ = self.event_bus.publish(Event::ProjectSaved);
 
+        println!("Project saved successfully to {:?}", path);
         Ok(())
     }
 

@@ -18,6 +18,23 @@ struct AppState {
 
 // Tauri commands that bridge between the UI and Rust backend
 
+/// Debug function to check the state
+#[tauri::command]
+async fn debug_state(state: State<'_, AppState>) -> Result<String, String> {
+    let state_guard = state.shared_state.read().unwrap();
+    let debug_info = format!(
+        "Parameters: {}\nBanks: {}\nSnaps in first bank: {}\nController: {}",
+        state_guard.project.parameters.len(),
+        state_guard.project.banks.len(),
+        state_guard.project.banks[0].snaps.len(),
+        state_guard.project.controller
+    );
+
+    println!("Debug state: {}", debug_info);
+
+    Ok(debug_info)
+}
+
 /// List available MIDI input ports
 #[tauri::command]
 async fn list_midi_inputs() -> Result<String, String> {
@@ -46,15 +63,33 @@ async fn set_controller(name: String, state: State<'_, AppState>) -> Result<(), 
 #[tauri::command]
 async fn get_project(state: State<'_, AppState>) -> Result<String, String> {
     let state_guard = state.shared_state.read().unwrap();
+    println!("Getting project state: {} parameters", state_guard.project.parameters.len());
+
+    // Print debug info about the current project
+    for (i, param) in state_guard.project.parameters.iter().enumerate() {
+        println!("Parameter {}: {} (CC: {})", i, param.name, param.cc);
+    }
+
     serde_json::to_string(&state_guard.project).map_err(|e| e.to_string())
 }
 
 /// Save the current project
 #[tauri::command]
 async fn save_project(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Get the shared state directly to ensure we're saving the current state
+    let state_guard = state.shared_state.read().unwrap();
+    println!("Before save - Project has {} parameters", state_guard.project.parameters.len());
+
     let app = state.app.lock().unwrap();
-    app.save_project(&PathBuf::from(path))
-        .map_err(|e| e.to_string())
+    let result = app.save_project(&PathBuf::from(path))
+        .map_err(|e| e.to_string());
+
+    // Double check the parameters are being saved
+    if result.is_ok() {
+        println!("Project saved. Parameters in state: {}", state_guard.project.parameters.len());
+    }
+
+    result
 }
 
 /// Load a project
@@ -197,9 +232,10 @@ async fn add_parameter(
 ) -> Result<(), String> {
     let mut state_guard = state.shared_state.write().unwrap();
 
+    // Add the parameter to the project
     state_guard.project.parameters.push(Parameter {
-        name,
-        description,
+        name: name.clone(),
+        description: description.clone(),
         cc,
     });
 
@@ -209,6 +245,9 @@ async fn add_parameter(
             snap.values.push(64); // Default to middle value
         }
     }
+
+    println!("Parameter added: {} (CC: {}), Total parameters: {}",
+             name, cc, state_guard.project.parameters.len());
 
     Ok(())
 }
@@ -229,9 +268,11 @@ async fn update_parameter(
     }
 
     let param = &mut state_guard.project.parameters[param_id];
-    param.name = name;
-    param.description = description;
+    param.name = name.clone();
+    param.description = description.clone();
     param.cc = cc;
+
+    println!("Parameter updated: ID {}, name '{}', CC {}", param_id, name, cc);
 
     Ok(())
 }
@@ -311,22 +352,23 @@ async fn main() {
     // Set up tracing for logging
     tracing_subscriber::fmt::init();
 
-    // Initialize application
-    let mut app = App::new().expect("Failed to create application");
-    app.init().expect("Failed to initialize application");
-
-    // Create shared state
+    // Initialize application - first create shared state
     let shared_state = new_shared_state();
     let event_bus = EventBus::default();
+
+    // Pass the shared state to the App constructor
+    let mut app = App::new(shared_state.clone(), event_bus.clone())
+        .expect("Failed to create application");
+    app.init().expect("Failed to initialize application");
 
     // Create a clone of event_bus for the setup closure
     let setup_event_bus = event_bus.clone();
 
     // Create Tauri application
     tauri::Builder::default()
-        .setup(move |app| {
+        .setup(move |app_handle| {
             // Get the main window
-            let window = app.get_window("main").unwrap();
+            let window = app_handle.get_window("main").unwrap();
 
             // Set up event listeners - use the cloned event_bus
             setup_event_listener(window, setup_event_bus);
@@ -355,7 +397,8 @@ async fn main() {
             add_snap,
             update_snap_description,
             set_controller,
-            send_wiggle
+            send_wiggle,
+            debug_state
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");

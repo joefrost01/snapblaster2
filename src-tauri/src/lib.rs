@@ -125,10 +125,8 @@ pub mod app {
     }
 
     impl App {
-        /// Create a new application instance
-        pub fn new() -> Result<Self, Box<dyn Error>> {
-            let state = new_shared_state();
-            let event_bus = EventBus::default();
+        /// Create a new application instance  
+        pub fn new(state: SharedState, event_bus: EventBus) -> Result<Self, Box<dyn Error>> {
             let project_storage = ProjectStorage::new(state.clone(), event_bus.clone());
 
             Ok(Self {
@@ -143,7 +141,7 @@ pub mod app {
 
         /// Initialize the application
         pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
-            // Initialize MIDI service
+            // Initialize MIDI service with the shared state
             let midi_service = MidiService::new(self.state.clone(), self.event_bus.clone())?;
             let (midi_handle, midi_service) = midi_service.start();
             self.midi_service = Some(midi_service);
@@ -155,12 +153,12 @@ pub mod app {
             self.link_sync = Some(link_sync);
             self.join_handles.push(link_handle);
 
-            // Initialize AI service
+            // Initialize AI service with the shared state
             let ai_service = AIService::new(self.state.clone(), self.event_bus.clone());
             let ai_handle = ai_service.start();
             self.join_handles.push(ai_handle);
 
-            // Initialize morph engine
+            // Initialize morph engine with the shared state
             let morph_engine = MorphEngine::new(self.state.clone(), self.event_bus.clone());
             let morph_handle = morph_engine.start();
             self.join_handles.push(morph_handle);
