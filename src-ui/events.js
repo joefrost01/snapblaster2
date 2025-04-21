@@ -244,9 +244,9 @@ async function createNewProject() {
         if (project) {
             appState.project = project;
 
-            // Switch to editor view and refresh UI
+            // Switch to config view and refresh UI
             import('./views.js').then(module => {
-                module.switchView('editor');
+                module.switchView('config');
             });
 
             // Show a notification

@@ -49,15 +49,16 @@ function updateConfigTabButtons() {
         document.getElementById('tab-49-64-conf')
     ];
 
-    // Remove active class from all buttons
-    tabButtons.forEach(btn => {
-        if (btn) btn.classList.remove('active');
+    tabButtons.forEach((btn, idx) => {
+        if (!btn) return;
+        const shouldBeActive = idx === currentConfigPage;
+        const isActive      = btn.classList.contains('active');
+        if (shouldBeActive && !isActive) {
+            btn.classList.add('active');
+        } else if (!shouldBeActive && isActive) {
+            btn.classList.remove('active');
+        }
     });
-
-    // Add active class to current page button
-    if (tabButtons[currentConfigPage]) {
-        tabButtons[currentConfigPage].classList.add('active');
-    }
 }
 
 // Create a row for parameter configuration
@@ -184,11 +185,6 @@ export async function addParameter() {
 
     try {
         const addBtn = document.getElementById('add-param-btn');
-        if (addBtn) {
-            // Visual feedback that we're adding
-            addBtn.disabled = true;
-            addBtn.textContent = 'Adding...';
-        }
 
         // Call backend to add parameter
         await api.addParameter(
@@ -204,26 +200,27 @@ export async function addParameter() {
             console.log("Project updated, now has", project.parameters.length, "parameters");
         }
 
-        // Calculate the new total pages
-        const pageCount = Math.ceil(appState.project.parameters.length / 16);
+        // Determine index and page of the new param
+        const newIndex = appState.project.parameters.length - 1;
+        const newPage  = Math.floor(newIndex / 16);
 
-        // Switch to last page if needed
-        if (pageCount > 0) {
-            setConfigPage(pageCount - 1);
+        if (newPage === currentConfigPage) {
+            // Still on the same page → just append one row
+            const newParam = appState.project.parameters[newIndex];
+            const row      = createParameterRow(newParam, newIndex);
+            const container = document.getElementById('config-params-container');
+            container.appendChild(row);
         } else {
-            // Just update UI
-            renderParameterList();
+            // Page boundary crossed → go to that page and re-render
+            setConfigPage(newPage);
         }
 
         console.log('Added new parameter with CC:', nextCC);
     } catch (error) {
         console.error('Error adding parameter:', error);
     } finally {
-        const addBtn = document.getElementById('add-param-btn');
-        if (addBtn) {
-            addBtn.disabled = false;
-            addBtn.textContent = '+ Add Parameter';
-        }
+
+
     }
 }
 
