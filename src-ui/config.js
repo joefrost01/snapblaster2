@@ -62,6 +62,7 @@ function updateConfigTabButtons() {
 }
 
 // Create a row for parameter configuration
+// Update the createParameterRow function in config.js
 function createParameterRow(param, index) {
     const row = document.createElement('div');
     row.className = 'config-param-row';
@@ -92,27 +93,65 @@ function createParameterRow(param, index) {
     ccInput.addEventListener('change', () => updateParameter(index));
     row.appendChild(ccInput);
 
-    // Wiggle button
+    // Wiggle button with enhanced feedback
     const wiggleBtn = document.createElement('button');
     wiggleBtn.className = 'wiggle-btn';
-    wiggleBtn.title = 'Send MIDI Wiggle';
+    wiggleBtn.title = 'Send MIDI Wiggle (for DAW MIDI Learn)';
     wiggleBtn.textContent = '🎚️';
-    wiggleBtn.addEventListener('click', () => wiggleParameter(param.cc));
+    wiggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wiggleParameter(param.cc);
+
+        // Add visual wiggle effect
+        wiggleBtn.classList.add('wiggling');
+        setTimeout(() => {
+            wiggleBtn.classList.remove('wiggling');
+        }, 800);
+    });
     row.appendChild(wiggleBtn);
 
     return row;
 }
 
-// Send wiggle pattern
+// Add this to the wiggleParameter function in config.js
 async function wiggleParameter(cc) {
     console.log(`Wiggling parameter CC ${cc}`);
 
     try {
-        // Send a pattern of values to help with MIDI learn in the DAW
-        const values = [0, 127, 64, 100, 30, 64]; // A distinct pattern
+        // Create a distinctive pattern for MIDI learn
+        const values = [0, 127, 64, 127, 0, 127, 0, 64];
+
+        // Visual feedback
+        const notification = document.createElement('div');
+        notification.className = 'notification info mini-notification';
+        notification.textContent = `Wiggling CC ${cc}...`;
+        document.body.appendChild(notification);
+
         await api.sendWiggle(cc, values);
+
+        notification.textContent = `CC ${cc} wiggle complete`;
+        notification.classList.add('fadeout');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+        }, 1000);
     } catch (error) {
         console.error('Error sending wiggle values:', error);
+
+        const errorNotification = document.createElement('div');
+        errorNotification.className = 'notification error';
+        errorNotification.textContent = `Error wiggling CC ${cc}`;
+        document.body.appendChild(errorNotification);
+
+        setTimeout(() => {
+            errorNotification.classList.add('fadeout');
+            setTimeout(() => {
+                if (errorNotification.parentNode) {
+                    document.body.removeChild(errorNotification);
+                }
+            }, 500);
+        }, 3000);
     }
 }
 

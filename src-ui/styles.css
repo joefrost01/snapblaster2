@@ -580,3 +580,62 @@ body.processing .grid-pad {
     0% { box-shadow: 0 0 0 0 rgba(0, 255, 0, 0.7); }
     100% { box-shadow: 0 0 10px 5px rgba(0, 255, 0, 0); }
 }
+
+/* Wiggle button animation */
+.wiggle-btn.wiggling {
+    animation: wiggle-animation 0.8s ease;
+    color: var(--accent);
+}
+
+@keyframes wiggle-animation {
+    0% { transform: translateX(0); }
+    10% { transform: translateX(-3px) rotate(-5deg); }
+    20% { transform: translateX(3px) rotate(5deg); }
+    30% { transform: translateX(-3px) rotate(-5deg); }
+    40% { transform: translateX(3px) rotate(5deg); }
+    50% { transform: translateX(-3px) rotate(-5deg); }
+    60% { transform: translateX(3px) rotate(5deg); }
+    70% { transform: translateX(-3px) rotate(-5deg); }
+    80% { transform: translateX(3px) rotate(5deg); }
+    90% { transform: translateX(-3px) rotate(-5deg); }
+    100% { transform: translateX(0); }
+}
+
+/* Mini notification for wiggle feedback */
+.mini-notification {
+    font-size: 0.8rem;
+    padding: 6px 12px;
+    opacity: 0.9;
+    bottom: 60px;
+    right: 20px;
+}
+
+.midi-status {
+    font-size: 0.8rem;
+    margin-left: 10px;
+    display: flex;
+    align-items: center;
+}
+
+#midi-status-indicator {
+    margin-left: 4px;
+    height: 8px;
+    width: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+#midi-status-indicator.inactive {
+    background-color: #6b7280;
+}
+
+#midi-status-indicator.active {
+    background-color: #10b981;
+    animation: pulse-animation 2s infinite;
+}
+
+@keyframes pulse-animation {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+}

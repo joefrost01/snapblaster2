@@ -86,7 +86,16 @@ function createParameterCell(param, value, index) {
     wiggleBtn.className = 'wiggle-btn';
     wiggleBtn.title = 'Wiggle for MIDI Learn';
     wiggleBtn.textContent = '🎚️';
-    wiggleBtn.addEventListener('click', () => wiggleParameter(param.cc));
+    wiggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent the event from bubbling up
+        wiggleParameter(param.cc);
+
+        // Add visual effect
+        wiggleBtn.classList.add('wiggling');
+        setTimeout(() => {
+            wiggleBtn.classList.remove('wiggling');
+        }, 800);
+    });
     valueDisplay.appendChild(wiggleBtn);
 
     header.appendChild(valueDisplay);
@@ -102,9 +111,9 @@ function createParameterCell(param, value, index) {
     slider.addEventListener('input', (e) => {
         const value = parseInt(e.target.value);
         document.getElementById(`value-${index}`).textContent = value;
-        // This updates local state but might not be persisting properly
         updateParameterValue(index, value);
     });
+
     cell.appendChild(slider);
 
     return cell;
@@ -115,10 +124,42 @@ async function wiggleParameter(cc) {
     console.log(`Wiggling parameter CC ${cc}`);
 
     try {
-        // Send a pattern of values to help with MIDI learn in the DAW
-        const values = [0, 127, 64, 100, 30, 64]; // A distinct pattern
+        // Create a more distinctive pattern for MIDI learn
+        // Start at 0, go to full, middle, then a rhythm pattern
+        const values = [0, 127, 64, 127, 0, 127, 0, 64];
+
+        // Show wiggle in progress indicator
+        const notification = document.createElement('div');
+        notification.className = 'notification info mini-notification';
+        notification.textContent = `Wiggling CC ${cc}...`;
+        document.body.appendChild(notification);
+
         await api.sendWiggle(cc, values);
+
+        // Update notification when complete
+        notification.textContent = `CC ${cc} wiggle complete`;
+        notification.classList.add('fadeout');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+        }, 1000);
     } catch (error) {
         console.error('Error sending wiggle values:', error);
+
+        // Show error notification
+        const errorNotification = document.createElement('div');
+        errorNotification.className = 'notification error';
+        errorNotification.textContent = `Error wiggling CC ${cc}`;
+        document.body.appendChild(errorNotification);
+
+        setTimeout(() => {
+            errorNotification.classList.add('fadeout');
+            setTimeout(() => {
+                if (errorNotification.parentNode) {
+                    document.body.removeChild(errorNotification);
+                }
+            }, 500);
+        }, 3000);
     }
 }

@@ -255,30 +255,23 @@ async fn generate_ai_values(
 /// Send wiggle values for MIDI learn
 #[tauri::command]
 async fn send_wiggle(cc: u8, values: Vec<u8>, state: State<'_, AppState>) -> Result<(), String> {
-    // Find the parameter ID by CC number
-    let param_id = {
-        let state_guard = state.shared_state.read().unwrap();
-        state_guard
-            .project
-            .parameters
-            .iter()
-            .position(|p| p.cc == cc)
-            .ok_or_else(|| format!("Parameter with CC {} not found", cc))?
-    };
+    // Get the MIDI manager
+    if let Some(midi_manager) = &state.midi_manager {
+        // Send each value with a small delay between
+        for value in values {
+            if let Err(e) = midi_manager.send_cc(0, cc, value) {
+                eprintln!("Error sending wiggle value: {}", e);
+                // Continue anyway
+            }
 
-    // Send each value with a small delay
-    for value in values {
-        state
-            .event_bus
-            .publish(Event::ParameterEdited { param_id, value })
-            .map(|_| ())
-            .map_err(|e| e.to_string())?;
+            // Wait a bit between values
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
 
-        // Wait a bit between values
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        return Ok(());
     }
 
-    Ok(())
+    Err("MIDI manager not initialized".to_string())
 }
 
 /// Start a morph between two snaps

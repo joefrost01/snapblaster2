@@ -89,6 +89,29 @@ export function setupEventListeners() {
         });
     }
 
+    const midiIndicator = document.getElementById('midi-status-indicator');
+    if (midiIndicator) {
+        // Check MIDI status on initial load
+        setTimeout(() => {
+            api.getMidiOutputs().then(outputs => {
+                if (outputs && outputs.length > 0) {
+                    midiIndicator.classList.remove('inactive');
+                    midiIndicator.classList.add('active');
+                    midiIndicator.title = `Connected MIDI outputs: ${outputs.join(', ')}`;
+                }
+            }).catch(err => console.error('Error checking MIDI status:', err));
+        }, 1000);
+
+        // Update when MIDI activity happens
+        eventBus.on('cc-value-changed', () => {
+            // Flash the indicator on MIDI activity
+            midiIndicator.classList.add('midi-active');
+            setTimeout(() => {
+                midiIndicator.classList.remove('midi-active');
+            }, 100);
+        });
+    }
+
     // Initialize controller dropdown with actual device
     initializeControllerDropdown();
 }
