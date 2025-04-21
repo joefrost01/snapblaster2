@@ -138,12 +138,21 @@ export function highlightSnap(snapIndex) {
 
     // Remove active class from all pads
     const pads = elements.gridContainer.querySelectorAll('.grid-pad');
-    pads.forEach(pad => pad.classList.remove('active'));
+    pads.forEach(pad => {
+        pad.classList.remove('active');
+        pad.classList.remove('midi-sending');
+    });
 
     // Find the pad for this snap and add active class
     // Remember to add 8 because first row is for modifiers
     const padIndex = snapIndex + 8;
     if (pads[padIndex]) {
         pads[padIndex].classList.add('active');
+
+        // Add a brief MIDI sending effect
+        pads[padIndex].classList.add('midi-sending');
+        setTimeout(() => {
+            pads[padIndex].classList.remove('midi-sending');
+        }, 200);
     }
 }

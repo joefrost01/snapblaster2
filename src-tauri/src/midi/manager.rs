@@ -162,19 +162,22 @@ impl MidiManager {
 
     /// Send values for a snap to all MIDI outputs
     pub fn send_snap_values(&self, parameters: &[(u8, u8)]) -> Result<(), Box<dyn Error>> {
-        // parameters is a list of (cc, value) pairs
+        // Log what we're sending
+        debug!("Sending {} parameter values via MIDI", parameters.len());
 
+        // For each CC/value pair
         for &(cc, value) in parameters {
-            // Send each CC to all outputs
+            // Send each CC to all outputs on MIDI channel 1 (zero-indexed as 0)
             self.send_cc(0, cc, value)?;
 
             // Small delay to avoid flooding the MIDI bus
-            std::thread::sleep(Duration::from_millis(1));
+            std::thread::sleep(Duration::from_millis(2));
         }
 
+        debug!("Finished sending all parameter values");
         Ok(())
     }
-
+    
     /// Update controller LEDs
     pub fn update_leds(&self,
                        current_bank: usize,

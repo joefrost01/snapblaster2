@@ -116,7 +116,10 @@ async fn select_snap(
     snap_id: usize,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Update current bank and snap indices
+    // Collection of parameter values to send via MIDI
+    let params_to_send: Vec<(u8, u8)>;
+
+    // First validate and update state
     {
         let mut state_guard = state.shared_state.write().unwrap();
 
@@ -136,12 +139,40 @@ async fn select_snap(
 
         // Ensure the snap has values for all parameters
         let param_count = state_guard.project.parameters.len();
-        let bank = &mut state_guard.project.banks[bank_id];
-        let snap = &mut bank.snaps[snap_id];
 
-        // Resize the values array if needed
-        if snap.values.len() < param_count {
-            snap.values.resize(param_count, 64);
+        {
+            let bank = &mut state_guard.project.banks[bank_id];
+            let snap = &mut bank.snaps[snap_id];
+
+            // Resize the values array if needed
+            if snap.values.len() < param_count {
+                snap.values.resize(param_count, 64);
+            }
+        }
+    }
+
+    // Now, in a separate step, collect the parameter values with just a read lock
+    {
+        let state_guard = state.shared_state.read().unwrap();
+
+        params_to_send = state_guard.project.parameters.iter().enumerate()
+            .filter_map(|(idx, param)| {
+                if idx < state_guard.project.banks[bank_id].snaps[snap_id].values.len() {
+                    let value = state_guard.project.banks[bank_id].snaps[snap_id].values[idx];
+                    Some((param.cc, value))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<(u8, u8)>>(); // Explicitly collect into Vec<(u8, u8)>
+    }
+
+    // Get the MIDI manager
+    if let Some(midi_manager) = &state.midi_manager {
+        // Send all parameter values via MIDI
+        if let Err(e) = midi_manager.send_snap_values(&params_to_send) {
+            // Log error but continue - MIDI failure shouldn't stop the snap selection
+            eprintln!("Failed to send snap values via MIDI: {}", e);
         }
     }
 
@@ -160,6 +191,9 @@ async fn edit_parameter(
     value: u8,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // The CC number for this parameter
+    let cc: u8;
+
     // First update the state directly
     {
         let mut state_guard = state.shared_state.write().unwrap();
@@ -167,6 +201,14 @@ async fn edit_parameter(
         // Store these values locally first
         let current_bank = state_guard.current_bank;
         let current_snap = state_guard.current_snap;
+
+        // Make sure the parameter exists
+        if param_id >= state_guard.project.parameters.len() {
+            return Err("Parameter ID out of range".to_string());
+        }
+
+        // Get the CC number for this parameter
+        cc = state_guard.project.parameters[param_id].cc;
 
         // Now access the snap with the stored indices
         let snap = &mut state_guard.project.banks[current_bank].snaps[current_snap];
@@ -178,6 +220,14 @@ async fn edit_parameter(
 
         // Update the value
         snap.values[param_id] = value;
+    }
+
+    // Send the MIDI CC value
+    if let Some(midi_manager) = &state.midi_manager {
+        if let Err(e) = midi_manager.send_cc(0, cc, value) {
+            // Log error but continue - MIDI failure shouldn't stop the parameter edit
+            eprintln!("Failed to send parameter CC via MIDI: {}", e);
+        }
     }
 
     // Then publish the event

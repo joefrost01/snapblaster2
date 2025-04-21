@@ -201,7 +201,7 @@ export async function createNewSnap(snapIndex) {
 
             console.log("New snap created, selecting it at pad index:", snapIndex);
 
-            // Select the new snap
+            // Select the new snap (which will also send MIDI values)
             appState.currentSnap = snapIndex;
             await selectSnap(snapIndex);
 
@@ -242,7 +242,7 @@ export async function updateParameterValue(paramId, value) {
         // Update the value
         snap.values[paramId] = value;
 
-        // Now send to backend
+        // Send to backend - this will also send the MIDI CC
         await api.editParameter(paramId, value);
 
         // Mark project as dirty
