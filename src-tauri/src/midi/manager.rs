@@ -1,22 +1,18 @@
 use crate::events::{Event, EventBus};
 use crate::midi::controller::{create_controller, MidiGridController, Rgb};
 use crate::model::SharedState;
-use midir::{Ignore, MidiInput, MidiOutput, MidiOutputConnection};
+use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::error::Error;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use midir::os::unix::VirtualOutput;
 use tracing::{debug, error, info, warn};
 
-// Import virtual port support for different platforms
-#[cfg(target_os = "macos")]
-use midir::os::unix::VirtualOutput;
-#[cfg(target_os = "linux")]
-use midir::os::unix::VirtualOutput;
-
-/// Main MIDI manager for Snap-Blaster
+/// Main MIDI manager for Snap-Blaster with both virtual and hardware I/O
 pub struct MidiManager {
     event_bus: EventBus,
     controller: Arc<Mutex<Option<Box<dyn MidiGridController>>>>,
+    input_connection: Arc<Mutex<Option<MidiInputConnection<()>>>>,
     output_connections: Arc<Mutex<Vec<(String, MidiOutputConnection)>>>,
     state: Option<SharedState>,
 }
@@ -26,6 +22,7 @@ impl Clone for MidiManager {
         Self {
             event_bus: self.event_bus.clone(),
             controller: self.controller.clone(),
+            input_connection: self.input_connection.clone(),
             output_connections: self.output_connections.clone(),
             state: self.state.clone(),
         }
@@ -38,278 +35,203 @@ impl MidiManager {
         Self {
             event_bus,
             controller: Arc::new(Mutex::new(None)),
+            input_connection: Arc::new(Mutex::new(None)),
             output_connections: Arc::new(Mutex::new(Vec::new())),
             state,
         }
     }
 
-    /// Set the shared state (call after initialization)
-    pub fn set_state(&mut self, state: SharedState) {
-        self.state = Some(state);
+    /// Create a virtual MIDI port for other apps
+    pub fn create_virtual_port(&self, port_name: &str) -> Result<(), Box<dyn Error>> {
+        let midi_out = MidiOutput::new("Snap-Blaster Virtual")?;
+        let conn = midi_out.create_virtual(port_name)?;
+        self.output_connections.lock().unwrap().push((port_name.to_string(), conn));
+        info!("Created virtual MIDI port: {}", port_name);
+        Ok(())
     }
 
     /// List available MIDI input ports
     pub fn list_input_ports() -> Result<Vec<String>, Box<dyn Error>> {
-        let midi_in = MidiInput::new("Snap-Blaster")?;
-        let ports = midi_in.ports();
+        let midi_in = MidiInput::new("Snap-Blaster Input")?;
         let mut port_names = Vec::new();
-
-        for port in ports {
-            if let Ok(name) = midi_in.port_name(&port) {
-                port_names.push(name);
-            }
+        for port in midi_in.ports() {
+            port_names.push(midi_in.port_name(&port)?);
         }
-
         Ok(port_names)
     }
 
     /// List available MIDI output ports
     pub fn list_output_ports() -> Result<Vec<String>, Box<dyn Error>> {
-        let midi_out = MidiOutput::new("Snap-Blaster")?;
-        let ports = midi_out.ports();
+        let midi_out = MidiOutput::new("Snap-Blaster Output")?;
         let mut port_names = Vec::new();
-
-        for port in ports {
-            if let Ok(name) = midi_out.port_name(&port) {
-                port_names.push(name);
-            }
+        for port in midi_out.ports() {
+            port_names.push(midi_out.port_name(&port)?);
         }
-
         Ok(port_names)
     }
 
-    /// Initialize MIDI controller
+    /// Open hardware MIDI ports and wire up callbacks that publish PadPressed events
+    fn connect_hardware_ports(&self, controller_name: &str) -> Result<(), Box<dyn Error>> {
+        // INPUT
+        let mut midi_in = MidiInput::new("Snap-Blaster Input")?;
+        midi_in.ignore(Ignore::None);
+        for port in midi_in.ports() {
+            let name = midi_in.port_name(&port)?;
+            if name.contains(controller_name) {
+                let eb = self.event_bus.clone();
+                let conn = midi_in.connect(
+                    &port,
+                    "snapblaster-in",
+                    move |_ts, msg: &[u8], _| {
+                        if msg.len() >= 3 && (msg[0] & 0xF0) == 0x90 {
+                            let note = msg[1];
+                            let vel = msg[2];
+                            let _ = eb.publish(Event::PadPressed { pad: note, velocity: vel });
+                        }
+                    },
+                    (),
+                )?;
+                *self.input_connection.lock().unwrap() = Some(conn);
+                info!("Connected MIDI input port: {}", name);
+                break;
+            }
+        }
+
+        // OUTPUT
+        let midi_out = MidiOutput::new("Snap-Blaster Output")?;
+        for port in midi_out.ports() {
+            let name = midi_out.port_name(&port)?;
+            if name.contains(controller_name) {
+                let conn = midi_out.connect(&port, "snapblaster-out")?;
+                self.output_connections.lock().unwrap().push((name.clone(), conn));
+                info!("Connected MIDI output port: {}", name);
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Initialize both virtual and hardware controllers and subscribe to pad events
     pub fn initialize_controller(&self, controller_name: &str) -> Result<(), Box<dyn Error>> {
         info!("Initializing controller: {}", controller_name);
 
-        // Create controller
-        match create_controller(controller_name, self.event_bus.clone()) {
-            Ok(controller) => {
-                info!("Successfully created {} controller", controller_name);
-                let mut controller_guard = self.controller.lock().unwrap();
-                *controller_guard = Some(controller);
+        // 1) Virtual port for DAW
+        if let Err(e) = self.create_virtual_port("Snap-Blaster") {
+            warn!("Failed to create virtual port: {}", e);
+        }
 
-                // Update LEDs right away
-                drop(controller_guard);
+        // 2) Real hardware I/O
+        if let Err(e) = self.connect_hardware_ports(controller_name) {
+            warn!("Failed to connect hardware MIDI ports: {}", e);
+        }
+
+        // 3) Grid controller abstraction (for LED set_led, clear_leds, etc.)
+        match create_controller(controller_name, self.event_bus.clone()) {
+            Ok(ctrl) => {
+                *self.controller.lock().unwrap() = Some(ctrl);
                 self.update_controller_leds()?;
+                info!("Grid controller initialized: {}", controller_name);
+
+                // 4) Subscribe to PadPressed events and route to handle_pad_pressed
+                let mut subscriber = self.event_bus.subscribe();
+                let manager = self.clone();
+                tokio::spawn(async move {
+                    while let Ok(event) = subscriber.recv().await {
+                        if let Event::PadPressed { pad, velocity } = event {
+                            if let Err(err) = manager.handle_pad_pressed(pad, velocity).await {
+                                error!("Error handling pad press: {}", err);
+                            }
+                        }
+                    }
+                });
 
                 Ok(())
-            },
+            }
             Err(e) => {
-                error!("Failed to create controller {}: {}", controller_name, e);
+                error!("Grid controller init failed for {}: {}", controller_name, e);
                 Err(e)
             }
         }
     }
 
-    /// Create a virtual MIDI port
-    pub fn create_virtual_port(&self, port_name: &str) -> Result<(), Box<dyn Error>> {
-        info!("Creating virtual MIDI port: {}", port_name);
-
-        // Different implementations for different platforms
-        #[cfg(target_os = "macos")]
-        {
-            let midi_out = MidiOutput::new("Snap-Blaster-Virtual")?;
-            match midi_out.create_virtual(port_name) {
-                Ok(conn) => {
-                    info!("Created virtual MIDI port: {}", port_name);
-                    let mut connections = self.output_connections.lock().unwrap();
-                    connections.push((port_name.to_string(), conn));
-                    Ok(())
-                },
-                Err(e) => {
-                    error!("Failed to create virtual MIDI port: {}", e);
-                    Err(e.into())
-                }
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            warn!("Virtual MIDI ports not directly supported on Windows");
-            warn!("Please use loopMIDI to create a virtual MIDI port named '{}'", port_name);
-            Ok(())  // Return OK even though we didn't create it
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            let midi_out = MidiOutput::new("Snap-Blaster-Virtual")?;
-            match midi_out.create_virtual(port_name) {
-                Ok(conn) => {
-                    info!("Created virtual MIDI port: {}", port_name);
-                    let mut connections = self.output_connections.lock().unwrap();
-                    connections.push((port_name.to_string(), conn));
-                    Ok(())
-                },
-                Err(e) => {
-                    error!("Failed to create virtual MIDI port: {}", e);
-                    Err(e.into())
-                }
-            }
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        {
-            Err("Virtual MIDI ports not supported on this platform".into())
-        }
-    }
-
-    /// Send a MIDI CC message to all available ports
+    /// Send a CC message to grid controller and all outputs
     pub fn send_cc(&self, channel: u8, cc: u8, value: u8) -> Result<(), Box<dyn Error>> {
-        // Send via controller if we have one
-        {
-            let mut controller_guard = self.controller.lock().unwrap();
-            if let Some(controller) = controller_guard.as_mut() {
-                if let Err(e) = controller.send_cc(channel, cc, value) {
-                    warn!("Failed to send CC via controller: {}", e);
-                }
+        if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
+            if let Err(e) = ctrl.send_cc(channel, cc, value) {
+                warn!("Controller CC send failed: {}", e);
             }
         }
-
-        // Send via virtual ports
-        {
-            let mut connections = self.output_connections.lock().unwrap();
-            for (name, conn) in connections.iter_mut() {
-                // Create a CC message: [Status byte (0xB0 + channel), CC#, Value]
-                let message = [0xB0 | (channel & 0x0F), cc, value];
-
-                if let Err(e) = conn.send(&message) {
-                    warn!("Failed to send CC to {}: {}", name, e);
-                } else {
-                    debug!("Sent CC to {}: ch={}, cc={}, val={}", name, channel, cc, value);
-                }
+        for (_, conn) in self.output_connections.lock().unwrap().iter_mut() {
+            let msg = [0xB0 | (channel & 0x0F), cc, value];
+            if let Err(e) = conn.send(&msg) {
+                warn!("CC send failed to {}: {}", cc, e);
+            } else {
+                debug!("Sent CC ch={} cc={} val={}", channel, cc, value);
             }
         }
-
         Ok(())
     }
 
-    /// Send values for a snap to all MIDI outputs
-    pub fn send_snap_values(&self, parameters: &[(u8, u8)]) -> Result<(), Box<dyn Error>> {
-        // Log what we're sending
-        debug!("Sending {} parameter values via MIDI", parameters.len());
-
-        // For each CC/value pair
-        for &(cc, value) in parameters {
-            // Send each CC to all outputs on MIDI channel 1 (zero-indexed as 0)
-            self.send_cc(0, cc, value)?;
-
-            // Small delay to avoid flooding the MIDI bus
+    /// Send a batch of parameter CCs for a snap
+    pub fn send_snap_values(&self, params: &[(u8, u8)]) -> Result<(), Box<dyn Error>> {
+        for &(cc, val) in params {
+            self.send_cc(0, cc, val)?;
             std::thread::sleep(Duration::from_millis(2));
         }
-
-        debug!("Finished sending all parameter values");
         Ok(())
     }
 
-    /// Update controller LEDs to match current state
+    /// Redraw all LEDs based on current state
     pub fn update_controller_leds(&self) -> Result<(), Box<dyn Error>> {
-        let mut controller_guard = self.controller.lock().unwrap();
-
-        if let Some(controller) = controller_guard.as_mut() {  // Change as_ref() to as_mut()
-            // Check if we have a state
-            if let Some(state) = &self.state {
-                let state_guard = state.read().unwrap();
-
-                // First, clear all LEDs
-                controller.clear_leds();
-
-                let current_bank = state_guard.current_bank;
-                let current_snap = state_guard.current_snap;
-
-                // Light top row (modifier row) blue, with active bank brighter
+        if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
+            ctrl.clear_leds();
+            if let Some(ref state) = self.state {
+                let st = state.read().unwrap();
                 for i in 0..8 {
-                    let color = if i == current_bank {
-                        // Current bank gets bright blue
+                    let color = if i == st.current_bank {
                         Rgb::new(0, 64, 255)
-                    } else if i < state_guard.project.banks.len() {
-                        // Available banks get dim blue
+                    } else if i < st.project.banks.len() {
                         Rgb::new(0, 32, 128)
                     } else {
-                        // Non-existent banks are off
                         Rgb::black()
                     };
-
-                    controller.set_led(i as u8, color);  // Convert i to u8
+                    ctrl.set_led(i as u8, color);
                 }
-
-                // Light pads with snaps
-                if current_bank < state_guard.project.banks.len() {
-                    let bank = &state_guard.project.banks[current_bank];
-
-                    // Go through each snap position (pad 8-63 map to snap 0-55)
-                    for i in 0..56 {
-                        let snap_idx = i;
-                        let pad_idx = i + 8; // Add 8 to account for modifier row
-
-                        if snap_idx < bank.snaps.len() && !bank.snaps[snap_idx].name.is_empty() {
-                            let color = if snap_idx == current_snap {
-                                // Current snap is orange
-                                Rgb::new(255, 128, 0)
-                            } else {
-                                // Other snaps are yellow
-                                Rgb::new(255, 255, 0)
-                            };
-
-                            controller.set_led(pad_idx as u8, color);  // Convert pad_idx to u8
-                        }
+                if st.current_bank < st.project.banks.len() {
+                    let bank = &st.project.banks[st.current_bank];
+                    for idx in 0..bank.snaps.len() {
+                        let pad = (idx + 8) as u8;
+                        let color = if idx == st.current_snap { Rgb::orange() } else { Rgb::gray() };
+                        ctrl.set_led(pad, color);
                     }
                 }
-
-                // Refresh the controller to apply all LED changes
-                controller.refresh_state();
-            } else {
-                // No state, just clear all LEDs
-                controller.clear_leds();
-                controller.refresh_state();
+                ctrl.refresh_state();
             }
         }
-
         Ok(())
     }
 
     /// Handle a pad press event from the hardware controller
     pub async fn handle_pad_pressed(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
-        // Only handle note-on events (velocity > 0)
-        if velocity == 0 {
-            return Ok(());
-        }
-
-        // Check if we have a state
-        if let Some(state) = &self.state {
-            let state_guard = state.read().unwrap();
-
-            // Check if this is a modifier (top row, pads 0-7)
+        if velocity == 0 { return Ok(()); }
+        if let Some(ref state) = self.state {
+            let guard = state.read().unwrap();
             if pad < 8 {
-                // This is a modifier/bank selection pad
-                // For now we don't handle bank switching - could implement later
+                // TODO: publish Event::BankSelected
                 return Ok(());
             }
-
-            // Regular snap pad (8-63 map to snaps 0-55)
             let snap_id = (pad - 8) as usize;
-            let bank_id = state_guard.current_bank;
-
-            // Check if this is a valid snap position
-            if bank_id < state_guard.project.banks.len() {
-                let bank = &state_guard.project.banks[bank_id];
-
+            let bank_id = guard.current_bank;
+            if bank_id < guard.project.banks.len() {
+                let bank = &guard.project.banks[bank_id];
                 if snap_id < bank.snaps.len() && !bank.snaps[snap_id].name.is_empty() {
-                    // Valid snap, trigger select
-                    drop(state_guard); // Release lock before publishing event
-
-                    // Publish select snap event - this will be handled by the backend
-                    self.event_bus.publish(Event::SnapSelected {
-                        bank: bank_id,
-                        snap_id,
-                    })?;
-
-                    // Update LEDs to reflect the change
+                    drop(guard);
+                    self.event_bus.publish(Event::SnapSelected { bank: bank_id, snap_id })?;
                     self.update_controller_leds()?;
                 }
             }
         }
-
         Ok(())
     }
 }

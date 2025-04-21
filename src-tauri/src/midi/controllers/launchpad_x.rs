@@ -136,7 +136,7 @@ impl LaunchpadX {
         if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
             // Launchpad X uses SysEx for mode switching - enter Programmer Mode (Device Mode 1)
             info!("Setting Launchpad X to Programmer Mode");
-            let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7];
+            let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x07];
             conn.send(&sysex)?;
 
             // Wait a bit for the mode change to take effect
