@@ -1,9 +1,13 @@
+// src-tauri/src/morph.rs
 use crate::events::{Event, EventBus, MorphCurve};
 use crate::model::{ActiveMorph, SharedState};
 use std::f64::consts::PI;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tokio::time::{self, Duration};
+use tokio::time::{self, Instant};
+use tracing::{debug, error, info, warn};
 
 /// MorphEngine handles interpolation between snaps
 pub struct MorphEngine {
@@ -26,9 +30,13 @@ impl MorphEngine {
 
     /// Start the morph engine
     pub fn start(mut self) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut morph_active = false;
+        info!("Starting morph engine");
 
+        tokio::spawn(async move {
+            // Track if we are currently morphing
+            let mut morph_task: Option<JoinHandle<()>> = None;
+
+            // Event loop
             while let Ok(event) = self.event_receiver.recv().await {
                 match event {
                     Event::MorphInitiated {
@@ -37,42 +45,72 @@ impl MorphEngine {
                         duration_bars,
                         curve_type,
                     } => {
-                        // Start a new morph
-                        self.start_morph(from_snap, to_snap, duration_bars, curve_type)
-                            .await;
-                        morph_active = true;
-                    }
-                    Event::BeatOccurred { beat: _, phase } => {
-                        // Update morph progress based on beat phase if a morph is active
-                        if morph_active {
-                            morph_active = self.update_morph(phase).await;
+                        info!("Starting morph: {} -> {}, duration: {}bars", from_snap, to_snap, duration_bars);
+
+                        // Cancel any existing morph task
+                        if let Some(task) = morph_task.take() {
+                            task.abort();
+                            info!("Cancelled previous morph task");
                         }
-                    }
+
+                        // Check if we have valid snap indices
+                        let state_guard = self.state.read().unwrap();
+                        let current_bank = &state_guard.project.banks[state_guard.current_bank];
+                        if from_snap >= current_bank.snaps.len() || to_snap >= current_bank.snaps.len() {
+                            error!("Invalid snap indices for morph: {} -> {}", from_snap, to_snap);
+                            continue;
+                        }
+
+                        // Clone necessary data for the morph task
+                        let state = self.state.clone();
+                        let event_bus = self.event_bus.clone();
+                        let bank_id = state_guard.current_bank;
+
+                        // Start a new morph task
+                        morph_task = Some(tokio::spawn(async move {
+                            Self::run_morph(state, event_bus, bank_id, from_snap, to_snap, duration_bars, curve_type).await;
+                        }));
+                    },
                     Event::Shutdown => {
+                        info!("Shutting down morph engine");
+
+                        // Cancel any active morph
+                        if let Some(task) = morph_task.take() {
+                            task.abort();
+                        }
+
                         break;
+                    },
+                    _ => {
+                        // Ignore other events
                     }
-                    _ => {}
                 }
             }
+
+            info!("Morph engine shutdown complete");
         })
     }
 
-    /// Start a new morph between two snaps
-    async fn start_morph(
-        &self,
+    /// Run a morph from one snap to another
+    async fn run_morph(
+        state: SharedState,
+        event_bus: EventBus,
+        bank_id: usize,
         from_snap: usize,
         to_snap: usize,
         duration_bars: u8,
         curve_type: MorphCurve,
     ) {
         // Get the values for both snaps
-        let (from_values, to_values) = {
-            let state_guard = self.state.read().unwrap();
-            let bank = &state_guard.project.banks[state_guard.current_bank];
+        let (from_values, to_values, param_count) = {
+            let state_guard = state.read().unwrap();
+            let bank = &state_guard.project.banks[bank_id];
             let from = &bank.snaps[from_snap];
             let to = &bank.snaps[to_snap];
+            let param_count = state_guard.project.parameters.len();
 
-            (from.values.clone(), to.values.clone())
+            // Clone the values to avoid holding the lock for too long
+            (from.values.clone(), to.values.clone(), param_count)
         };
 
         // Create a new active morph
@@ -81,174 +119,157 @@ impl MorphEngine {
             to_snap,
             duration_bars,
             progress: 0.0,
-            from_values,
-            to_values,
-            current_values: Vec::new(), // Will be set in update_morph
+            from_values: from_values.clone(),
+            to_values: to_values.clone(),
+            current_values: from_values.clone(), // Start with source values
         };
 
         // Update the state
         {
-            let mut state_guard = self.state.write().unwrap();
+            let mut state_guard = state.write().unwrap();
             state_guard.active_morph = Some(active_morph);
         }
 
-        // If we're not using Link, start a timer-based morph
-        // For simplicity, we'll use a 60 BPM default tempo if not synced
-        if !self.is_link_connected() {
-            let state = self.state.clone();
-            let event_bus = self.event_bus.clone();
+        // Calculate total duration based on BPM
+        // For simplicity, we'll use a 120 BPM default tempo if not synced
+        // In a real implementation, we would get this from Link
+        let bpm = 120.0;
+        let beats_per_second = bpm / 60.0;
+        let bars = duration_bars as f64;
+        let beats_per_bar = 4.0; // Assuming 4/4 time
+        let total_duration_secs = (bars * beats_per_bar) / beats_per_second;
 
-            tokio::spawn(async move {
-                // Calculate total duration based on 60 BPM
-                let beats_per_second = 60.0 / 60.0; // 60 BPM = 1 beat per second
-                let bars = duration_bars as f64;
-                let beats_per_bar = 4.0; // Assuming 4/4 time
-                let total_duration_ms = (bars * beats_per_bar / beats_per_second) * 1000.0;
-                let steps = 30; // Update 30 times per second
-                let step_duration_ms = total_duration_ms / steps as f64;
+        // Use more updates for longer morphs
+        let updates_per_second = 30.0; // 30 fps is smooth enough
+        let total_updates = (total_duration_secs * updates_per_second) as u32;
+        let update_interval = Duration::from_millis((1000.0 / updates_per_second) as u64);
 
-                for i in 0..=steps {
-                    let progress = i as f64 / steps as f64;
+        info!("Starting morph with duration: {}s, total updates: {}", total_duration_secs, total_updates);
 
-                    // Update the morph
-                    {
-                        let mut state_guard = state.write().unwrap();
-                        if let Some(morph) = &mut state_guard.active_morph {
-                            morph.progress = progress;
+        // Track morph start time
+        let start_time = Instant::now();
+        let total_duration = Duration::from_secs_f64(total_duration_secs);
 
-                            // Calculate current values based on curve
-                            morph.current_values = Self::interpolate_values(
-                                &morph.from_values,
-                                &morph.to_values,
-                                progress,
-                                curve_type.clone(),
-                            );
-                        }
-                    }
+        // Create an interval for regular updates
+        let mut interval = time::interval(update_interval);
+        interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
-                    // Publish progress event
-                    let current_values = {
-                        let state_guard = state.read().unwrap();
-                        state_guard
-                            .active_morph
-                            .as_ref()
-                            .map(|m| m.current_values.clone())
-                            .unwrap_or_default()
-                    };
+        loop {
+            interval.tick().await;
 
-                    let _ = event_bus.publish(Event::MorphProgressed {
-                        progress,
-                        current_values,
-                    });
+            // Calculate progress
+            let elapsed = start_time.elapsed();
+            if elapsed >= total_duration {
+                // Morph complete
+                Self::complete_morph(&state, &event_bus, &to_values).await;
+                break;
+            }
 
-                    // If we're at the end, complete the morph
-                    if i == steps {
-                        // Clear the active morph
-                        {
-                            let mut state_guard = state.write().unwrap();
-                            state_guard.active_morph = None;
-                        }
+            let progress = elapsed.as_secs_f64() / total_duration_secs;
 
-                        // Publish completion event
-                        let _ = event_bus.publish(Event::MorphCompleted);
-                    }
+            // Apply curve to the progress
+            let curved_progress = Self::apply_curve(progress, &curve_type);
 
-                    // Sleep until next step
-                    time::sleep(Duration::from_millis(step_duration_ms as u64)).await;
+            // Calculate and update current values
+            let current_values = Self::interpolate_values(
+                &from_values,
+                &to_values,
+                curved_progress,
+                param_count
+            );
+
+            // Update the morph state
+            {
+                let mut state_guard = state.write().unwrap();
+                if let Some(morph) = &mut state_guard.active_morph {
+                    morph.progress = progress;
+                    morph.current_values = current_values.clone();
                 }
+            }
+
+            // Publish progress event
+            let _ = event_bus.publish(Event::MorphProgressed {
+                progress,
+                current_values,
             });
         }
     }
 
-    /// Update morph progress based on Ableton Link beat phase
-    async fn update_morph(&self, phase: f64) -> bool {
-        let (progress, current_values, curve_type) = {
-            let state_guard = self.state.read().unwrap();
+    /// Apply a curve function to the progress value
+    fn apply_curve(progress: f64, curve_type: &MorphCurve) -> f64 {
+        match curve_type {
+            MorphCurve::Linear => progress,
+            #[cfg(feature = "pro")]
+            MorphCurve::Exponential => progress * progress,
+            #[cfg(feature = "pro")]
+            MorphCurve::Logarithmic => progress.sqrt(),
+            #[cfg(feature = "pro")]
+            MorphCurve::SCurve => 0.5 * (1.0 - (PI * progress).cos()),
+        }
+    }
 
-            if let Some(morph) = &state_guard.active_morph {
-                // Calculate progress based on phase and duration
-                let beats_per_bar = 4.0; // Assuming 4/4 time
-                let duration_beats = morph.duration_bars as f64 * beats_per_bar;
-                let progress = (phase % duration_beats) / duration_beats;
-
-                // Check if morph is complete
-                if phase >= duration_beats {
-                    return false;
+    /// Complete a morph and finalize to the target values
+    /// Complete a morph and finalize to the target values
+    async fn complete_morph(state: &SharedState, event_bus: &EventBus, final_values: &[u8]) {
+        // First, extract what we need from the active morph
+        let (to_snap, current_bank) = {
+            let state_guard = state.read().unwrap();
+            match &state_guard.active_morph {
+                Some(morph) => (morph.to_snap, state_guard.current_bank),
+                None => {
+                    warn!("No active morph to complete");
+                    return;
                 }
-
-                // Calculate current values
-                let current_values = Self::interpolate_values(
-                    &morph.from_values,
-                    &morph.to_values,
-                    progress,
-                    MorphCurve::Linear, // Replace with the actual curve from the morph
-                );
-
-                // Update the morph state
-                let curve_type = match state_guard.active_morph.as_ref() {
-                    Some(morph) => MorphCurve::Linear, // Replace with actual curve type
-                    None => MorphCurve::Linear,
-                };
-
-                (progress, current_values, curve_type)
-            } else {
-                return false;
             }
         };
 
-        // Update the morph progress
+        // Now update everything with the extracted values
         {
-            let mut state_guard = self.state.write().unwrap();
-            if let Some(morph) = &mut state_guard.active_morph {
-                morph.progress = progress;
-                morph.current_values = current_values.clone();
+            let mut state_guard = state.write().unwrap();
+            // Update the current snap
+            state_guard.current_snap = to_snap;
+
+            // Update the snap's values to ensure they match exactly
+            if let Some(bank) = state_guard.project.banks.get_mut(current_bank) {
+                if let Some(snap) = bank.snaps.get_mut(to_snap) {
+                    snap.values = final_values.to_vec();
+                }
             }
+
+            // Clear the active morph
+            state_guard.active_morph = None;
         }
 
-        // Publish progress event
-        let _ = self.event_bus.publish(Event::MorphProgressed {
-            progress,
-            current_values,
+        // Send the final values
+        let _ = event_bus.publish(Event::MorphProgressed {
+            progress: 1.0,
+            current_values: final_values.to_vec(),
         });
 
-        true
+        // Send completion event
+        let _ = event_bus.publish(Event::MorphCompleted);
+
+        info!("Morph completed");
     }
 
-    /// Check if Ableton Link is connected
-    fn is_link_connected(&self) -> bool {
-        // Placeholder - would check Link state
-        false
-    }
-
-    /// Interpolate between two sets of values based on a curve
+    /// Interpolate between two sets of values based on a progress value
     fn interpolate_values(
         from: &[u8],
         to: &[u8],
         progress: f64,
-        curve_type: MorphCurve,
+        param_count: usize,
     ) -> Vec<u8> {
-        let mut result = Vec::with_capacity(from.len());
+        let mut result = Vec::with_capacity(param_count);
 
-        for i in 0..from.len() {
+        for i in 0..param_count {
             let from_val = *from.get(i).unwrap_or(&0) as f64;
             let to_val = *to.get(i).unwrap_or(&0) as f64;
 
-            // Apply the curve to the progress value
-            let curved_progress = match curve_type {
-                MorphCurve::Linear => progress,
-                #[cfg(feature = "pro")]
-                MorphCurve::Exponential => progress * progress,
-                #[cfg(feature = "pro")]
-                MorphCurve::Logarithmic => progress.sqrt(),
-                #[cfg(feature = "pro")]
-                MorphCurve::SCurve => 0.5 * (1.0 - (PI * progress).cos()),
-            };
-
             // Interpolate
-            let value = from_val + (to_val - from_val) * curved_progress;
+            let value = from_val + (to_val - from_val) * progress;
 
             // Clamp and convert back to u8
-            let clamped = value.max(0.0).min(127.0) as u8;
+            let clamped = value.round().max(0.0).min(127.0) as u8;
             result.push(clamped);
         }
 
