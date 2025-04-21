@@ -8,7 +8,7 @@ pub mod storage;
 // MIDI subsystem
 pub mod midi {
     pub mod controller;
-    pub mod service;
+    pub mod manager;
     pub mod controllers {
         pub mod apc_mini;
         pub mod generic;
@@ -106,24 +106,27 @@ pub mod app {
     use crate::ai::AIService;
     use crate::events::EventBus;
     use crate::link::LinkSynchronizer;
-    use crate::midi::service::MidiService;
+    use crate::midi::manager::MidiManager;
     use crate::model::{new_shared_state, SharedState};
     use crate::morph::MorphEngine;
     use crate::storage::ProjectStorage;
     use std::error::Error;
     use std::path::Path;
+    use std::sync::Arc;
     use tokio::task::JoinHandle;
+    use tracing::{error, info, warn};
 
     /// Main application state
     pub struct App {
         state: SharedState,
         event_bus: EventBus,
-        midi_service: Option<MidiService>,
+        midi_manager: Option<Arc<MidiManager>>, // Change to Option
         link_sync: Option<LinkSynchronizer>,
         project_storage: ProjectStorage,
         join_handles: Vec<JoinHandle<()>>,
     }
 
+    /// Initialize the application
     impl App {
         /// Create a new application instance  
         pub fn new(state: SharedState, event_bus: EventBus) -> Result<Self, Box<dyn Error>> {
@@ -132,7 +135,7 @@ pub mod app {
             Ok(Self {
                 state,
                 event_bus,
-                midi_service: None,
+                midi_manager: None, // Initialize as None
                 link_sync: None,
                 project_storage,
                 join_handles: Vec::new(),
@@ -141,11 +144,33 @@ pub mod app {
 
         /// Initialize the application
         pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
-            // Initialize MIDI service with the shared state
-            let midi_service = MidiService::new(self.state.clone(), self.event_bus.clone())?;
-            let (midi_handle, midi_service) = midi_service.start();
-            self.midi_service = Some(midi_service);
-            self.join_handles.push(midi_handle);
+            // Initialize MIDI manager with the shared state
+            let midi_manager = Arc::new(MidiManager::new(self.event_bus.clone()));
+
+            // Initialize controller
+            let controller_name = {
+                let state_guard = self.state.read().unwrap();
+                state_guard.project.controller.clone()
+            };
+
+            // Try to create virtual MIDI port
+            if let Err(e) = midi_manager.create_virtual_port("Snap-Blaster") {
+                error!("Failed to create virtual MIDI port: {}", e);
+                // Continue anyway
+            } else {
+                info!("Created virtual MIDI port: Snap-Blaster");
+            }
+
+            // Now try to connect to a controller
+            if let Err(e) = midi_manager.initialize_controller(&controller_name) {
+                warn!("Failed to initialize controller {}: {}", controller_name, e);
+                // Continue anyway
+            } else {
+                info!("Initialized controller: {}", controller_name);
+            }
+
+            // Store the MIDI manager
+            self.midi_manager = Some(midi_manager);
 
             // Initialize Link synchronizer
             let link_sync = LinkSynchronizer::new(self.event_bus.clone());
@@ -164,6 +189,10 @@ pub mod app {
             self.join_handles.push(morph_handle);
 
             Ok(())
+        }
+
+        pub fn midi_manager(&self) -> Option<Arc<MidiManager>> {
+            self.midi_manager.clone()
         }
 
         /// Save the current project

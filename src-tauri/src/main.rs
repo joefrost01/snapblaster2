@@ -2,18 +2,20 @@
 
 use snapblaster::app::App;
 use snapblaster::events::{Event, EventBus, MorphCurve};
-use snapblaster::midi::service::MidiService;
+
 use snapblaster::model::new_shared_state;
 use snapblaster::model::{Parameter, SharedState, Snap};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Manager, State, Window};
+use snapblaster::midi::manager::MidiManager;
 
 // Application state accessible from Tauri commands
 struct AppState {
     app: Mutex<App>,
     event_bus: EventBus,
     shared_state: SharedState,
+    midi_manager: Option<Arc<MidiManager>>, // Change to Option
 }
 
 // Tauri commands that bridge between the UI and Rust backend
@@ -38,7 +40,7 @@ async fn debug_state(state: State<'_, AppState>) -> Result<String, String> {
 /// List available MIDI input ports
 #[tauri::command]
 async fn list_midi_inputs() -> Result<String, String> {
-    let ports = MidiService::list_input_ports().map_err(|e| e.to_string())?;
+    let ports = MidiManager::list_input_ports().map_err(|e| e.to_string())?;
 
     serde_json::to_string(&ports).map_err(|e| e.to_string())
 }
@@ -46,7 +48,7 @@ async fn list_midi_inputs() -> Result<String, String> {
 /// List available MIDI output ports
 #[tauri::command]
 async fn list_midi_outputs() -> Result<String, String> {
-    let ports = MidiService::list_output_ports().map_err(|e| e.to_string())?;
+    let ports = MidiManager::list_output_ports().map_err(|e| e.to_string())?;
 
     serde_json::to_string(&ports).map_err(|e| e.to_string())
 }
@@ -374,7 +376,8 @@ async fn main() {
 
     // Create a clone of event_bus for the setup closure
     let setup_event_bus = event_bus.clone();
-
+    let midi_manager = app.midi_manager();
+    
     // Create Tauri application
     tauri::Builder::default()
         .setup(move |app_handle| {
@@ -390,6 +393,7 @@ async fn main() {
             app: Mutex::new(app),
             event_bus,
             shared_state,
+            midi_manager,
         })
         .invoke_handler(tauri::generate_handler![
             list_midi_inputs,

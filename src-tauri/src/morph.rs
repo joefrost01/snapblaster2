@@ -1,4 +1,3 @@
-// src-tauri/src/morph.rs
 use crate::events::{Event, EventBus, MorphCurve};
 use crate::model::{ActiveMorph, SharedState};
 use std::f64::consts::PI;
