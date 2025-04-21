@@ -145,7 +145,7 @@ pub mod app {
         /// Initialize the application
         pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
             // Initialize MIDI manager with the shared state
-            let midi_manager = Arc::new(MidiManager::new(self.event_bus.clone()));
+            let midi_manager = Arc::new(MidiManager::new(self.event_bus.clone(), Some(self.state.clone())));
 
             // Initialize controller
             let controller_name = {

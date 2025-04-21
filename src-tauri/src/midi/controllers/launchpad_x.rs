@@ -79,19 +79,27 @@ impl LaunchpadX {
                     match midi_msg {
                         MidiMessage::NoteOn(_, note, velocity) => {
                             // Convert to pad index
-                            let pad = note_to_pad_index(note);
-                            let vel = u7_to_u8(velocity);
+                            let note_num = u8::from(note);
 
-                            debug!("Received NoteOn: note={:?}, pad={}, velocity={}", note, pad, vel);
+                            // Use the custom note-to-pad mapping
+                            if let Some(pad) = note_to_pad_index(note_num) {
+                                let vel = u7_to_u8(velocity);
+                                debug!("Received NoteOn: note={:?}, pad={}, velocity={}", note, pad, vel);
 
-                            // Publish event
-                            let _ = event_bus.publish(Event::PadPressed { pad, velocity: vel });
+                                // Only process if velocity > 0 (ignore note off events)
+                                if vel > 0 {
+                                    // Publish event
+                                    let _ = event_bus.publish(Event::PadPressed { pad, velocity: vel });
+                                }
+                            } else {
+                                debug!("Note {:?} mapped to no valid pad", note);
+                            }
                         },
                         MidiMessage::ControlChange(_, cc, value) => {
                             // Handle control change messages if needed
                             debug!("Received CC: cc={:?}, value={:?}", cc, value);
                         },
-                        _ => {} // Ignore other message types
+                        _ => {} // Ignore other message types like aftertouch
                     }
                 }
             },
@@ -166,6 +174,44 @@ impl LaunchpadX {
         // 21 22 23 24 25 26 27 28  (second row)
         // ... and so on
         // First digit is row+1, second digit is col+1
+        (10 * (row + 1) + (col + 1)) as u8
+    }
+
+    /// Converts Launchpad note to our internal pad index (0-63)
+    fn note_to_pad_index(&self, note: u8) -> Option<u8> {
+        // LaunchPad X in custom mode 5 sends notes from B-2 to E-5
+        // This maps to MIDI note numbers 35-104
+
+        // Check if it's a valid 2-digit format note (for programmer mode)
+        if note >= 11 && note <= 88 && note % 10 != 0 && note % 10 <= 8 && note / 10 <= 8 {
+            // Extract row and column
+            let row = (note / 10) - 1;
+            let col = (note % 10) - 1;
+
+            // Convert to our 0-63 pad index
+            return Some(row * 8 + col);
+        }
+
+        // Try the standard MIDI note mapping (B-2 to E-5 range)
+        if note >= 35 && note <= 104 {
+            let row = (note - 35) / 8;
+            let col = (note - 35) % 8;
+
+            if row < 8 && col < 8 {
+                return Some(row * 8 + col);
+            }
+        }
+
+        None
+    }
+
+    /// Convert pad index (0-63) to Launchpad X note
+    fn pad_to_note(&self, pad: u8) -> u8 {
+        // Get row and column
+        let row = pad / 8;
+        let col = pad % 8;
+
+        // Convert to Launchpad X programmer mode format
         (10 * (row + 1) + (col + 1)) as u8
     }
 
@@ -257,13 +303,14 @@ impl LaunchpadX {
 
 impl MidiGridController for LaunchpadX {
     fn handle_note_input(&mut self, note: u8, velocity: u8) {
-        // This is handled in the MIDI input callback
-        // But we exposed this API for testing/simulation
-        debug!("Handling simulated note input: note={}, velocity={}", note, velocity);
-        let _ = self.event_bus.publish(Event::PadPressed {
-            pad: note,
-            velocity,
-        });
+        // Filter out aftertouch (velocity > 0 for note-on only)
+        if velocity > 0 {
+            if let Some(pad) = self.note_to_pad_index(note) {
+                debug!("Simulated note input: note={}, mapped to pad={}", note, pad);
+                let _ = self.event_bus.publish(Event::PadPressed { pad, velocity });
+            }
+        }
+        // Ignore note-off events (velocity = 0)
     }
 
     fn set_led(&mut self, pad: u8, color: Rgb) {
@@ -277,16 +324,11 @@ impl MidiGridController for LaunchpadX {
 
         // Send MIDI message to update LED
         if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
-            let launchpad_pad = self.rc_to_pad(row, col);
+            let launchpad_pad = self.pad_to_note(pad);
 
             // For frequent updates, use Note On with velocity color (faster)
             let color_index = self.rgb_to_velocity(color);
             let msg = [0x90, launchpad_pad, color_index];
-
-            // For accuracy, we could use SysEx instead:
-            // self.send_rgb_color(conn, launchpad_pad, color).unwrap_or_else(|e| {
-            //    error!("Failed to set LED color: {}", e);
-            // });
 
             if let Err(e) = conn.send(&msg) {
                 error!("Failed to set LED color: {}", e);
@@ -379,35 +421,34 @@ impl PortInfos<midir::MidiOutputPort> for MidiOutput {
     }
 }
 
-/// Convert a Note to a pad index (0-63)
-fn note_to_pad_index(note: Note) -> u8 {
-    // Get the raw u8 value from the note
-    let note_num = u8::from(note);
-
-    // Launchpad X in programmer mode uses:
-    // 11, 12, 13... for the first row
-    // 21, 22, 23... for the second row
-    // etc.
-
-    // Get the row and column
-    let row = (note_num / 10) - 1;
-    let col = (note_num % 10) - 1;
-
-    // Convert to our 0-63 index
-    if row >= 0 && row < 8 && col >= 0 && col < 8 {
-        (row * 8 + col) as u8
-    } else {
-        debug!("Note {} out of grid range", note_num);
-        0 // Default for out of range
-    }
-}
-
 /// Convert a pad index (0-63) to row and column
 fn pad_to_row_col(pad: u8) -> (usize, usize) {
     let row = (pad / 8) as usize;
     let col = (pad % 8) as usize;
 
     (row, col)
+}
+
+/// Convert a MIDI note number to a pad index
+fn note_to_pad_index(note: u8) -> Option<u8> {
+    // Check if it's in programmer mode format (11-88)
+    if note >= 11 && note <= 88 && note % 10 != 0 && note % 10 <= 8 && note / 10 <= 8 {
+        let row = (note / 10) - 1;
+        let col = (note % 10) - 1;
+        return Some(row * 8 + col);
+    }
+
+    // Try standard MIDI note mapping for B-2 to E-5 range (35-104)
+    if note >= 35 && note <= 104 {
+        let row = (note - 35) / 8;
+        let col = (note - 35) % 8;
+
+        if row < 8 && col < 8 {
+            return Some(row * 8 + col);
+        }
+    }
+
+    None
 }
 
 /// Convert a wmidi::U7 to u8

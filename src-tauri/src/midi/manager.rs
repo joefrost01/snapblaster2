@@ -1,5 +1,6 @@
 use crate::events::{Event, EventBus};
 use crate::midi::controller::{create_controller, MidiGridController, Rgb};
+use crate::model::SharedState;
 use midir::{Ignore, MidiInput, MidiOutput, MidiOutputConnection};
 use std::error::Error;
 use std::sync::{Arc, Mutex, RwLock};
@@ -17,16 +18,34 @@ pub struct MidiManager {
     event_bus: EventBus,
     controller: Arc<Mutex<Option<Box<dyn MidiGridController>>>>,
     output_connections: Arc<Mutex<Vec<(String, MidiOutputConnection)>>>,
+    state: Option<SharedState>,
+}
+
+impl Clone for MidiManager {
+    fn clone(&self) -> Self {
+        Self {
+            event_bus: self.event_bus.clone(),
+            controller: self.controller.clone(),
+            output_connections: self.output_connections.clone(),
+            state: self.state.clone(),
+        }
+    }
 }
 
 impl MidiManager {
     /// Create a new MIDI manager
-    pub fn new(event_bus: EventBus) -> Self {
+    pub fn new(event_bus: EventBus, state: Option<SharedState>) -> Self {
         Self {
             event_bus,
             controller: Arc::new(Mutex::new(None)),
             output_connections: Arc::new(Mutex::new(Vec::new())),
+            state,
         }
+    }
+
+    /// Set the shared state (call after initialization)
+    pub fn set_state(&mut self, state: SharedState) {
+        self.state = Some(state);
     }
 
     /// List available MIDI input ports
@@ -69,6 +88,11 @@ impl MidiManager {
                 info!("Successfully created {} controller", controller_name);
                 let mut controller_guard = self.controller.lock().unwrap();
                 *controller_guard = Some(controller);
+
+                // Update LEDs right away
+                drop(controller_guard);
+                self.update_controller_leds()?;
+
                 Ok(())
             },
             Err(e) => {
@@ -177,53 +201,113 @@ impl MidiManager {
         debug!("Finished sending all parameter values");
         Ok(())
     }
-    
-    /// Update controller LEDs
-    pub fn update_leds(&self,
-                       current_bank: usize,
-                       current_snap: usize,
-                       bank_count: usize,
-                       snap_states: &[bool]) -> Result<(), Box<dyn Error>> {
+
+    /// Update controller LEDs to match current state
+    pub fn update_controller_leds(&self) -> Result<(), Box<dyn Error>> {
         let mut controller_guard = self.controller.lock().unwrap();
 
-        // Check if we have a controller
-        if let Some(controller) = controller_guard.as_mut() {
-            // Clear all LEDs first
-            controller.clear_leds();
+        if let Some(controller) = controller_guard.as_mut() {  // Change as_ref() to as_mut()
+            // Check if we have a state
+            if let Some(state) = &self.state {
+                let state_guard = state.read().unwrap();
 
-            // Set active snap LED
-            if current_snap < 56 {  // Make sure it's within our grid
-                let pad = current_snap as u8 + 8;  // Add 8 to account for modifier row
-                controller.set_led(pad, Rgb::orange());
-            }
+                // First, clear all LEDs
+                controller.clear_leds();
 
-            // Set bank indicators in the top row
-            for i in 0..8 {
-                let color = if i == current_bank {
-                    Rgb::blue()  // Current bank
-                } else if i < bank_count {
-                    Rgb::new(64, 64, 64)  // Other available banks
-                } else {
-                    Rgb::black()  // Banks that don't exist
-                };
+                let current_bank = state_guard.current_bank;
+                let current_snap = state_guard.current_snap;
 
-                controller.set_led(i as u8, color);
-            }
+                // Light top row (modifier row) blue, with active bank brighter
+                for i in 0..8 {
+                    let color = if i == current_bank {
+                        // Current bank gets bright blue
+                        Rgb::new(0, 64, 255)
+                    } else if i < state_guard.project.banks.len() {
+                        // Available banks get dim blue
+                        Rgb::new(0, 32, 128)
+                    } else {
+                        // Non-existent banks are off
+                        Rgb::black()
+                    };
 
-            // Highlight available snaps
-            for (i, &has_snap) in snap_states.iter().enumerate() {
-                if i == current_snap || i >= 56 {
-                    continue;  // Skip current snap (already lit) or out of grid range
+                    controller.set_led(i as u8, color);  // Convert i to u8
                 }
 
-                if has_snap {
-                    let pad = i as u8 + 8;  // Add 8 to account for modifier row
-                    controller.set_led(pad, Rgb::new(30, 30, 30));  // Dim color for defined snaps
+                // Light pads with snaps
+                if current_bank < state_guard.project.banks.len() {
+                    let bank = &state_guard.project.banks[current_bank];
+
+                    // Go through each snap position (pad 8-63 map to snap 0-55)
+                    for i in 0..56 {
+                        let snap_idx = i;
+                        let pad_idx = i + 8; // Add 8 to account for modifier row
+
+                        if snap_idx < bank.snaps.len() && !bank.snaps[snap_idx].name.is_empty() {
+                            let color = if snap_idx == current_snap {
+                                // Current snap is orange
+                                Rgb::new(255, 128, 0)
+                            } else {
+                                // Other snaps are yellow
+                                Rgb::new(255, 255, 0)
+                            };
+
+                            controller.set_led(pad_idx as u8, color);  // Convert pad_idx to u8
+                        }
+                    }
                 }
+
+                // Refresh the controller to apply all LED changes
+                controller.refresh_state();
+            } else {
+                // No state, just clear all LEDs
+                controller.clear_leds();
+                controller.refresh_state();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle a pad press event from the hardware controller
+    pub async fn handle_pad_pressed(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
+        // Only handle note-on events (velocity > 0)
+        if velocity == 0 {
+            return Ok(());
+        }
+
+        // Check if we have a state
+        if let Some(state) = &self.state {
+            let state_guard = state.read().unwrap();
+
+            // Check if this is a modifier (top row, pads 0-7)
+            if pad < 8 {
+                // This is a modifier/bank selection pad
+                // For now we don't handle bank switching - could implement later
+                return Ok(());
             }
 
-            // Apply all LED changes
-            controller.refresh_state();
+            // Regular snap pad (8-63 map to snaps 0-55)
+            let snap_id = (pad - 8) as usize;
+            let bank_id = state_guard.current_bank;
+
+            // Check if this is a valid snap position
+            if bank_id < state_guard.project.banks.len() {
+                let bank = &state_guard.project.banks[bank_id];
+
+                if snap_id < bank.snaps.len() && !bank.snaps[snap_id].name.is_empty() {
+                    // Valid snap, trigger select
+                    drop(state_guard); // Release lock before publishing event
+
+                    // Publish select snap event - this will be handled by the backend
+                    self.event_bus.publish(Event::SnapSelected {
+                        bank: bank_id,
+                        snap_id,
+                    })?;
+
+                    // Update LEDs to reflect the change
+                    self.update_controller_leds()?;
+                }
+            }
         }
 
         Ok(())

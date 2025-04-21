@@ -468,6 +468,26 @@ async fn main() {
     // Create a clone of event_bus for the setup closure
     let setup_event_bus = event_bus.clone();
     let midi_manager = app.midi_manager();
+
+    // Set up event handler for controller input
+    if let Some(midi_manager) = &midi_manager {
+        let midi_manager_clone = midi_manager.clone();
+        let pad_event_bus = event_bus.clone();
+
+        // Spawn a task to handle pad press events
+        tokio::spawn(async move {
+            let mut rx = pad_event_bus.subscribe();
+
+            while let Ok(event) = rx.recv().await {
+                if let Event::PadPressed { pad, velocity } = event {
+                    // Handle pad press events
+                    if let Err(e) = midi_manager_clone.handle_pad_pressed(pad, velocity).await {
+                        eprintln!("Error handling pad press: {}", e);
+                    }
+                }
+            }
+        });
+    }
     
     // Create Tauri application
     tauri::Builder::default()
