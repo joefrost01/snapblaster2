@@ -1,8 +1,8 @@
 // events.js - Event listeners setup
-import { appState, selectSnap, updateParameterValue, updateSnapDescription } from './state.js';
-import { switchView } from './views.js';
-import { addParameter, setConfigPage } from './config.js';
-import { api, fileDialogs, eventBus } from './tauri-api.js';
+import {appState, updateSnapDescription} from './state.js';
+import {switchView} from './views.js';
+import {addParameter} from './config.js';
+import {api, eventBus, fileDialogs} from './tauri-api.js';
 
 // Global state for copy/paste
 let copiedSnap = null;
@@ -14,6 +14,7 @@ export function setupEventListeners() {
     // Header navigation
     document.getElementById('snap-btn').addEventListener('click', () => switchView('editor'));
     document.getElementById('conf-btn').addEventListener('click', () => switchView('config'));
+    document.getElementById('new-btn').addEventListener('click', handleNewClick);
     document.getElementById('save-btn').addEventListener('click', saveProject);
     document.getElementById('load-btn').addEventListener('click', loadProject);
     document.getElementById('ai-btn').addEventListener('click', generateAIValues);
@@ -164,70 +165,44 @@ function copyCurrentSnap() {
 
 // Paste to the current snap or create a new one
 async function pasteToCurrentSnap() {
-    if (!appState.project || !copiedSnap) {
-        showNotification('No snap has been copied', 'warning');
-        return;
-    }
-
+    if (!appState.project || !copiedSnap) return showNotification('No snap copied', 'warning');
+    document.body.classList.add('processing');
     try {
-        // Disable UI during operation
-        document.body.classList.add('processing');
+        const bank = appState.currentBank;
+        const snap = appState.currentSnap;
+        // 1) Update description immediately
+        await api.updateSnapDescription(bank, snap, copiedSnap.description);
+        window.snapElements.snapDescription.value = copiedSnap.description;
+        appState.project.banks[bank].snaps[snap].description = copiedSnap.description;
 
-        // Get the latest project data to ensure we're working with current state
-        const refreshedProject = await api.getProject();
-        if (refreshedProject) {
-            appState.project = refreshedProject;
-        }
+        // 2) Build and fire off all CC edits in parallel
+        const paramCount = appState.project.parameters.length;
+        const promises = [];
+        const values = copiedSnap.values.slice(0, paramCount);
+        while (values.length < paramCount) values.push(64);
 
-        // Update the description
-        await api.updateSnapDescription(
-            appState.currentBank,
-            appState.currentSnap,
-            copiedSnap.description
-        );
-
-        // Make sure our parameter values array matches the actual parameters length
-        const paramLength = appState.project.parameters.length;
-        const valuesCopy = [...copiedSnap.values];
-
-        // Resize the values array if needed
-        if (valuesCopy.length > paramLength) {
-            valuesCopy.length = paramLength; // Truncate
-        } else while (valuesCopy.length < paramLength) {
-            valuesCopy.push(64); // Extend with default values
-        }
-
-        // Update all parameter values one by one
-        for (let i = 0; i < valuesCopy.length; i++) {
-            await api.editParameter(i, valuesCopy[i]);
-            // Small delay between updates
-            await new Promise(resolve => setTimeout(resolve, 20));
-        }
-
-        // Get the updated project data
-        const updatedProject = await api.getProject();
-        if (updatedProject) {
-            appState.project = updatedProject;
-        }
-
-        // Refresh the parameters display
-        import('./parameters.js').then(module => {
-            module.updateParameters();
+        values.forEach((val, i) => {
+            // Optimistically update UI state
+            const slider = document.querySelector(`input[data-param-id="${i}"]`);
+            const display = document.getElementById(`value-${i}`);
+            if (slider) slider.value = val;
+            if (display) display.textContent = val;
+            // Update in-memory model
+            appState.project.banks[bank].snaps[snap].values[i] = val;
+            // Queue the Tauri IPC call
+            promises.push(api.editParameter(i, val));
         });
 
-        // Update the UI description field
-        const descriptionElement = window.snapElements.snapDescription;
-        if (descriptionElement) {
-            descriptionElement.value = copiedSnap.description;
-        }
+        // Wait for all to finish
+        await Promise.all(promises);
 
-        // Show success message
-        showNotification('Snap values pasted successfully', 'success');
-    } catch (error) {
-        console.error('Error during paste operation:', error);
-        showNotification('Error during paste operation', 'error');
+        // Final full re-render (just in case)
+        (await import('./parameters.js')).updateParameters();
+        showNotification('Snap pasted!', 'success');
+    } catch (err) {
+        console.error(err);
+        showNotification('Error pasting snap', 'error');
     } finally {
-        // Re-enable UI
         document.body.classList.remove('processing');
     }
 }
@@ -365,6 +340,7 @@ async function saveProject() {
                     projectNameElement.textContent = fileName;
                 }
             }
+            appState.isDirty = false;
         }
     } catch (error) {
         console.error('Error saving project:', error);
@@ -424,3 +400,30 @@ eventBus.on('project-loaded', async () => {
         console.error("Error handling project-loaded event:", error);
     }
 });
+
+function confirmAsync(message) {
+    return new Promise(resolve => {
+        resolve(window.confirm(message));
+    });
+}
+
+// Guarded handler for the header “New” button
+async function handleNewClick(evt) {
+    // prevent any default if it’s ever inside a form
+    evt?.preventDefault?.();
+
+    if (appState.isDirty) {
+        // this returns a Promise<boolean>
+        const ok = await confirmAsync(
+            'You have unsaved changes. Creating a new project will discard them.\n\nContinue?'
+        );
+        if (!ok) {
+            console.log('User cancelled new‑project');
+            return;
+        }
+    }
+
+    // only now do we blow everything away
+    await createNewProject();
+    appState.isDirty = false;
+}

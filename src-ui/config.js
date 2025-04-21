@@ -209,6 +209,8 @@ export async function addParameter() {
             const newParam = appState.project.parameters[newIndex];
             const row      = createParameterRow(newParam, newIndex);
             const container = document.getElementById('config-params-container');
+            const placeholder = container.querySelector('.empty-parameters-message');
+            if (placeholder) placeholder.remove();
             container.appendChild(row);
         } else {
             // Page boundary crossed → go to that page and re-render
@@ -216,6 +218,8 @@ export async function addParameter() {
         }
 
         console.log('Added new parameter with CC:', nextCC);
+
+        appState.isDirty = true;
     } catch (error) {
         console.error('Error adding parameter:', error);
     } finally {

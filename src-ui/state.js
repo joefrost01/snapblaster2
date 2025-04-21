@@ -8,7 +8,8 @@ export const appState = {
     currentSnap: 0,
     currentTab: 0,
     project: null,
-    isLoading: false
+    isLoading: false,
+    isDirty: false
 };
 
 // Initialize state from backend
@@ -223,6 +224,7 @@ export async function updateParameterValue(paramId, value) {
     try {
         await api.editParameter(paramId, value);
         // The event listener will update the UI when the backend confirms
+        appState.isDirty = true;
     } catch (error) {
         console.error('Error updating parameter value:', error);
     }
@@ -241,6 +243,8 @@ export async function updateSnapDescription(description) {
         // Update local state
         const snap = appState.project.banks[appState.currentBank].snaps[appState.currentSnap];
         snap.description = description;
+
+        appState.isDirty = true;
     } catch (error) {
         console.error('Error updating snap description:', error);
     }
