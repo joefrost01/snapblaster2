@@ -69,24 +69,38 @@ function setupEventListeners() {
         });
     });
 
-    // Listen for parameter edit events
     eventBus.on('parameter-edited', ({ paramId, value }) => {
         if (!appState.project) return;
 
         // Update local state
-        const snap = appState.project.banks[appState.currentBank].snaps[appState.currentSnap];
-        snap.values[paramId] = value;
+        const bank = appState.currentBank;
+        const snapId = appState.currentSnap;
 
-        // Update the parameter display
-        const valueElement = document.getElementById(`value-${paramId}`);
-        if (valueElement) {
-            valueElement.textContent = value;
-        }
+        // Make sure the bank and snap exist
+        if (bank < appState.project.banks.length) {
+            const snap = appState.project.banks[bank].snaps[snapId];
 
-        // Update slider if this event wasn't triggered by the slider
-        const slider = document.querySelector(`input[data-param-id="${paramId}"]`);
-        if (slider && slider.value != value) {
-            slider.value = value;
+            if (snap) {
+                // Ensure the values array is long enough
+                while (snap.values.length <= paramId) {
+                    snap.values.push(64);
+                }
+
+                // Update the value
+                snap.values[paramId] = value;
+
+                // Update the parameter display
+                const valueElement = document.getElementById(`value-${paramId}`);
+                if (valueElement) {
+                    valueElement.textContent = value;
+                }
+
+                // Update slider if this event wasn't triggered by the slider
+                const slider = document.querySelector(`input[data-param-id="${paramId}"]`);
+                if (slider && slider.value != value) {
+                    slider.value = value;
+                }
+            }
         }
     });
 
@@ -142,28 +156,23 @@ export async function selectSnap(snapIndex) {
     try {
         console.log("Selecting snap at index:", snapIndex);
 
-        // Update local state first to make UI more responsive
+        // Call the backend first to ensure state is synchronized
+        await api.selectSnap(appState.currentBank, snapIndex);
+
+        // Then update local state
         appState.currentSnap = snapIndex;
 
-        // Update UI immediately before backend call completes
+        // Update UI
         updateSnapDetailsInUI(snapIndex);
         highlightCurrentSnap();
 
-        // Then make the backend call
-        await api.selectSnap(appState.currentBank, snapIndex);
-
-        // Update parameters display with the correct values
+        // Force parameters display update with the correct values
         import('./parameters.js').then(module => {
             module.updateParameters();
         });
 
     } catch (error) {
         console.error('Error selecting snap:', error);
-        // Revert to previous state on error
-        const currentProject = await api.getProject();
-        if (currentProject) {
-            appState.project = currentProject;
-        }
     }
 }
 
@@ -222,8 +231,21 @@ export async function updateParameterValue(paramId, value) {
     if (!appState.project) return;
 
     try {
+        // Immediately update local state for responsive UI
+        const snap = appState.project.banks[appState.currentBank].snaps[appState.currentSnap];
+
+        // Ensure the values array is big enough
+        while (snap.values.length <= paramId) {
+            snap.values.push(64); // Default to middle
+        }
+
+        // Update the value
+        snap.values[paramId] = value;
+
+        // Now send to backend
         await api.editParameter(paramId, value);
-        // The event listener will update the UI when the backend confirms
+
+        // Mark project as dirty
         appState.isDirty = true;
     } catch (error) {
         console.error('Error updating parameter value:', error);

@@ -28,7 +28,11 @@ export function setupEventListeners() {
         btn.addEventListener('click', () => {
             elements.tabButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+
+            // Store current tab in app state
             appState.currentTab = index;
+
+            // Update UI to show correct parameters
             import('./parameters.js').then(module => {
                 module.updateParameters();
             });
@@ -319,6 +323,24 @@ async function saveProject() {
     }
 
     try {
+        // Ensure all snaps have values for all parameters
+        const paramCount = appState.project.parameters.length;
+        appState.project.banks.forEach(bank => {
+            bank.snaps.forEach(snap => {
+                // Resize values array if needed
+                if (snap.values.length < paramCount) {
+                    // Preserve existing values
+                    const currentValues = [...snap.values];
+                    snap.values = Array(paramCount).fill(64);
+
+                    // Copy over existing values
+                    currentValues.forEach((val, idx) => {
+                        snap.values[idx] = val;
+                    });
+                }
+            });
+        });
+
         const path = await fileDialogs.saveProjectDialog();
         if (path) {
             console.log(`Project saved to: ${path}`);

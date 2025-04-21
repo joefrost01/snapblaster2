@@ -102,9 +102,9 @@ function createParameterCell(param, value, index) {
     slider.addEventListener('input', (e) => {
         const value = parseInt(e.target.value);
         document.getElementById(`value-${index}`).textContent = value;
+        // This updates local state but might not be persisting properly
         updateParameterValue(index, value);
     });
-
     cell.appendChild(slider);
 
     return cell;

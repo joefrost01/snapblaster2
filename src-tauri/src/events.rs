@@ -259,6 +259,7 @@ impl fmt::Display for Event {
                 write!(f, "SnapSelected: bank={}, snap_id={}", bank, snap_id)
             }
             Event::ParameterEdited { param_id, value } => {
+                info!("Backend received parameter edit: param={}, value={}", param_id, value);
                 write!(f, "ParameterEdited: param_id={}, value={}", param_id, value)
             }
             Event::BankSelected { bank_id } => write!(f, "BankSelected: bank_id={}", bank_id),

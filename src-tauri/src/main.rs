@@ -116,12 +116,39 @@ async fn select_snap(
     snap_id: usize,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Update current bank and snap indices
+    {
+        let mut state_guard = state.shared_state.write().unwrap();
+
+        // Validate indices
+        if bank_id >= state_guard.project.banks.len() {
+            return Err("Bank ID out of range".to_string());
+        }
+
+        let bank = &state_guard.project.banks[bank_id];
+        if snap_id >= bank.snaps.len() {
+            return Err("Snap ID out of range".to_string());
+        }
+
+        // Update state
+        state_guard.current_bank = bank_id;
+        state_guard.current_snap = snap_id;
+
+        // Ensure the snap has values for all parameters
+        let param_count = state_guard.project.parameters.len();
+        let bank = &mut state_guard.project.banks[bank_id];
+        let snap = &mut bank.snaps[snap_id];
+
+        // Resize the values array if needed
+        if snap.values.len() < param_count {
+            snap.values.resize(param_count, 64);
+        }
+    }
+
+    // Send the event
     state
         .event_bus
-        .publish(Event::SnapSelected {
-            bank: bank_id,
-            snap_id,
-        })
+        .publish(Event::SnapSelected { bank: bank_id, snap_id })
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
@@ -133,6 +160,27 @@ async fn edit_parameter(
     value: u8,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // First update the state directly
+    {
+        let mut state_guard = state.shared_state.write().unwrap();
+
+        // Store these values locally first
+        let current_bank = state_guard.current_bank;
+        let current_snap = state_guard.current_snap;
+
+        // Now access the snap with the stored indices
+        let snap = &mut state_guard.project.banks[current_bank].snaps[current_snap];
+
+        // Ensure the values array is big enough
+        while snap.values.len() <= param_id {
+            snap.values.push(64); // Default value
+        }
+
+        // Update the value
+        snap.values[param_id] = value;
+    }
+
+    // Then publish the event
     state
         .event_bus
         .publish(Event::ParameterEdited { param_id, value })
