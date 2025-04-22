@@ -146,11 +146,16 @@ impl LaunchpadX {
             // Clear all pads
             self.clear_leds_internal(conn)?;
 
-            // Set all pads to very dim to show it's ready
+            // Set all pads to very dim to show it's ready, except the top row which is blue for modifier pads
             for row in 0..8 {
                 for col in 0..8 {
                     let note = self.rc_to_pad(row, col);
-                    let msg = [0x90, note, 1]; // Very dim color
+                    let color_value = if row == 7 {
+                        45 // Blue color for top row (modifier pads)
+                    } else {
+                        1  // Very dim color for other pads
+                    };
+                    let msg = [0x90, note, color_value];
                     conn.send(&msg)?;
                 }
             }
@@ -171,8 +176,14 @@ impl LaunchpadX {
         }
 
         // In Programmer Mode, pad numbering for the main grid:
+        // 67 68 69 70 71 72 73 74 (top row)
+        // 59 60 61 62 63 64 65 66
+        // 41 52 53 54 55 56 57 58
+        // 43 44 45 46 47 48 49 50
+        // 35 36 37 38 39 40 41 42
+        // 27 28 29 30 31 32 33 34
+        // 19 20 21 22 23 24 25 26
         // 11 12 13 14 15 16 17 18  (bottom row)
-        // 21 22 23 24 25 26 27 28  (second from bottom row)
         // ... and so on
         // First digit is row+1, second digit is col+1
         // Invert the row mapping (0->8, 1->7, 2->6, etc.) to match physical layout
