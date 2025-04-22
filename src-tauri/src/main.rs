@@ -8,6 +8,7 @@ use snapblaster::model::{Parameter, SharedState, Snap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State, Window};
+use tracing::{debug, error};
 use snapblaster::midi::manager::MidiManager;
 
 // Application state accessible from Tauri commands
@@ -480,9 +481,11 @@ async fn main() {
 
             while let Ok(event) = rx.recv().await {
                 if let Event::PadPressed { pad, velocity } = event {
-                    // Handle pad press events
+                    debug!("Received PadPressed event in main handler: pad={}, velocity={}", pad, velocity);
                     if let Err(e) = midi_manager_clone.handle_pad_pressed(pad, velocity).await {
-                        eprintln!("Error handling pad press: {}", e);
+                        error!("Error handling pad press: {}", e);
+                    } else {
+                        debug!("Successfully handled pad press");
                     }
                 }
             }

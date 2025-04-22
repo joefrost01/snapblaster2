@@ -193,17 +193,16 @@ impl MidiManager {
 
     /// Send a CC message to grid controller and all outputs
     pub fn send_cc(&self, channel: u8, cc: u8, value: u8) -> Result<(), Box<dyn Error>> {
-        if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
-            if let Err(e) = ctrl.send_cc(channel, cc, value) {
-                warn!("Controller CC send failed: {}", e);
-            }
-        }
-        for (_, conn) in self.output_connections.lock().unwrap().iter_mut() {
-            let msg = [0xB0 | (channel & 0x0F), cc, value];
-            if let Err(e) = conn.send(&msg) {
-                warn!("CC send failed to {}: {}", cc, e);
-            } else {
-                debug!("Sent CC ch={} cc={} val={}", channel, cc, value);
+        // Only send to virtual MIDI port, not hardware controllers
+        for (name, conn) in self.output_connections.lock().unwrap().iter_mut() {
+            // Only send to our virtual MIDI port
+            if name.contains("Snap-Blaster") {
+                let msg = [0xB0 | (channel & 0x0F), cc, value];
+                if let Err(e) = conn.send(&msg) {
+                    warn!("CC send failed to {}: {}", name, e);
+                } else {
+                    debug!("Sent CC ch={} cc={} val={} to {}", channel, cc, value, name);
+                }
             }
         }
         Ok(())
@@ -211,10 +210,27 @@ impl MidiManager {
 
     /// Send a batch of parameter CCs for a snap
     pub fn send_snap_values(&self, params: &[(u8, u8)]) -> Result<(), Box<dyn Error>> {
+        info!("Sending {} CC values for snap", params.len());
+
+        // Get all output connections
+        let mut outputs = self.output_connections.lock().unwrap();
+
         for &(cc, val) in params {
-            self.send_cc(0, cc, val)?;
+            for (name, conn) in outputs.iter_mut() {
+                // ONLY send to ports named exactly "Snap-Blaster"
+                if name == "Snap-Blaster" {
+                    let msg = [0xB0, cc, val]; // Channel 0 CC message
+                    if let Err(e) = conn.send(&msg) {
+                        warn!("Failed to send CC {} value {} to {}: {}", cc, val, name, e);
+                    } else {
+                        debug!("Sent CC ch=0 cc={} val={} to {}", cc, val, name);
+                    }
+                }
+            }
+
             std::thread::sleep(Duration::from_millis(2));
         }
+
         Ok(())
     }
 
@@ -341,9 +357,14 @@ impl MidiManager {
                 state_guard.current_snap = snap_id;
             }
 
-            // Send the selected snap's values via MIDI CCs
+            // Add more logging to debug
+            info!("Ready to send CC values for snap {}", snap_id);
+
+            // Send the selected snap's values via MIDI CCs - to the VIRTUAL port, not the hardware
             if !cc_values.is_empty() {
                 info!("Sending {} CC values for snap {}", cc_values.len(), snap_id);
+
+                // Make sure this is correctly sending to your virtual MIDI port
                 self.send_snap_values(&cc_values)?;
             }
 

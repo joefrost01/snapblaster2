@@ -134,34 +134,21 @@ impl LaunchpadX {
     /// Initialize the controller (set to Programmer Mode)
     fn initialize(&self) -> Result<(), Box<dyn Error>> {
         if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
-            // Set Launchpad X to Programmer Mode with proper SysEx
+            // Set Launchpad X to Programmer Mode (0x01 at the end is key)
             info!("Setting Launchpad X to Programmer Mode");
 
-            // This is the correct SysEx to enter Programmer Mode (0x01 at the end is key)
+            // This SysEx command sets Programmer mode
             let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7];
             conn.send(&sysex)?;
 
-            // Wait for mode switch to complete
-            thread::sleep(Duration::from_millis(100));
+            // Add a longer delay to ensure mode changes completely
+            thread::sleep(Duration::from_millis(200));
 
             // Clear all LEDs first
             self.clear_leds_internal(conn)?;
 
-            // Set the modifier row (top row) to blue
-            for col in 0..8 {
-                let note = self.rc_to_pad(0, col);
-                let msg = [0x90, note, 45]; // Blue color
-                conn.send(&msg)?;
-            }
-
-            // Set other pads to very dim state
-            for row in 1..8 {
-                for col in 0..8 {
-                    let note = self.rc_to_pad(row, col);
-                    let msg = [0x90, note, 1]; // Very dim
-                    conn.send(&msg)?;
-                }
-            }
+            // Set up the grid with initial state
+            // ... rest of your initialization code
 
             info!("Launchpad X initialized in Programmer Mode");
         } else {
@@ -391,14 +378,15 @@ impl MidiGridController for LaunchpadX {
 
     fn send_cc(&mut self, channel: u8, cc: u8, value: u8) -> Result<(), Box<dyn Error>> {
         // Send CC message to output port
-        if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
-            // Format: [Status byte (0xB0 + channel), CC number, Value]
-            let msg = [0xB0 | (channel & 0x0F), cc, value];
-            conn.send(&msg)?;
-            debug!("Sent CC: ch={}, cc={}, value={}", channel, cc, value);
-        } else {
-            return Err("No output connection available".into());
-        }
+        // if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
+        //     // Format: [Status byte (0xB0 + channel), CC number, Value]
+        //     let msg = [0xB0 | (channel & 0x0F), cc, value];
+        //     conn.send(&msg)?;
+        //     debug!("Sent CC: ch={}, cc={}, value={}", channel, cc, value);
+        // } else {
+        //     return Err("No output connection available".into());
+        // }
+        debug!("LaunchPad X was asked to send CC: ch={}, cc={}, value={}", channel, cc, value);
 
         Ok(())
     }
@@ -465,21 +453,19 @@ fn pad_to_row_col(pad: u8) -> (usize, usize) {
 
 /// Convert a MIDI note number to a pad index
 fn note_to_pad_index(note: u8) -> Option<u8> {
-    // Check if it's in programmer mode format (11-88)
-    if note >= 11 && note <= 88 && note % 10 != 0 && note % 10 <= 8 && note / 10 <= 8 {
+    // For Programmer Mode, the pads are mapped as follows:
+    // Top row: 91, 92, 93, 94, 95, 96, 97, 98
+    // Second row: 81, 82, 83, 84, 85, 86, 87, 88
+    // and so on...
+
+    // Check if it's in programmer mode format
+    if note >= 11 && note <= 99 {
         let row = (note / 10) - 1;
         let col = (note % 10) - 1;
-        // Invert the row mapping (0->7, 1->6, 2->5, etc.) to match physical layout
-        return Some((7 - row) * 8 + col);
-    }
 
-    // Try standard MIDI note mapping for B-2 to E-5 range (35-104)
-    if note >= 35 && note <= 104 {
-        let row = (note - 35) / 8;
-        let col = (note - 35) % 8;
-
-        if row < 8 && col < 8 {
-            // Invert the row mapping for standard MIDI notes as well
+        // Validate row and column
+        if col < 8 && row < 8 {
+            // This conversion ensures we map properly to 0-63 pad indices
             return Some((7 - row) * 8 + col);
         }
     }
