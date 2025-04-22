@@ -169,13 +169,14 @@ impl LaunchpadX {
             warn!("Invalid row/col: {}/{}", row, col);
             return 0;
         }
-        
+
         // In Programmer Mode, pad numbering for the main grid:
-        // 11 12 13 14 15 16 17 18  (top row)
-        // 21 22 23 24 25 26 27 28  (second row)
+        // 11 12 13 14 15 16 17 18  (bottom row)
+        // 21 22 23 24 25 26 27 28  (second from bottom row)
         // ... and so on
         // First digit is row+1, second digit is col+1
-        (10 * (row + 1) + (col + 1)) as u8
+        // Invert the row mapping (0->8, 1->7, 2->6, etc.) to match physical layout
+        (10 * (8 - row) + (col + 1)) as u8
     }
 
     /// Convert pad index (0-63) to Launchpad X note
@@ -185,7 +186,8 @@ impl LaunchpadX {
         let col = pad % 8;
 
         // Convert to Launchpad X programmer mode format
-        (10 * (row + 1) + (col + 1)) as u8
+        // Invert the row mapping (0->8, 1->7, 2->6, etc.) to match physical layout
+        (10 * (8 - row) + (col + 1)) as u8
     }
 
     /// Internal method to clear all LEDs
@@ -425,7 +427,8 @@ fn note_to_pad_index(note: u8) -> Option<u8> {
     if note >= 11 && note <= 88 && note % 10 != 0 && note % 10 <= 8 && note / 10 <= 8 {
         let row = (note / 10) - 1;
         let col = (note % 10) - 1;
-        return Some(row * 8 + col);
+        // Invert the row mapping (0->7, 1->6, 2->5, etc.) to match physical layout
+        return Some((7 - row) * 8 + col);
     }
 
     // Try standard MIDI note mapping for B-2 to E-5 range (35-104)
@@ -434,7 +437,8 @@ fn note_to_pad_index(note: u8) -> Option<u8> {
         let col = (note - 35) % 8;
 
         if row < 8 && col < 8 {
-            return Some(row * 8 + col);
+            // Invert the row mapping for standard MIDI notes as well
+            return Some((7 - row) * 8 + col);
         }
     }
 
