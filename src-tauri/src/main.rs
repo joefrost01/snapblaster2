@@ -474,7 +474,7 @@ async fn main() {
         let midi_manager_clone = midi_manager.clone();
         let pad_event_bus = event_bus.clone();
 
-        // Spawn a task to handle pad press events
+        // Existing pad press handler
         tokio::spawn(async move {
             let mut rx = pad_event_bus.subscribe();
 
@@ -484,6 +484,29 @@ async fn main() {
                     if let Err(e) = midi_manager_clone.handle_pad_pressed(pad, velocity).await {
                         eprintln!("Error handling pad press: {}", e);
                     }
+                }
+            }
+        });
+
+        // Add a new handler for snap-related events to update LEDs
+        let midi_manager_for_events = midi_manager.clone();
+        let state_events_bus = event_bus.clone();
+
+        tokio::spawn(async move {
+            let mut rx = state_events_bus.subscribe();
+
+            while let Ok(event) = rx.recv().await {
+                // Update controller LEDs when state changes
+                match event {
+                    Event::ProjectLoaded |
+                    Event::SnapSelected { .. } |
+                    Event::BankSelected { .. } => {
+                        // No need for Option pattern - it's an Arc directly
+                        if let Err(e) = midi_manager_for_events.update_controller_leds() {
+                            eprintln!("Failed to update controller LEDs after state change: {}", e);
+                        }
+                    },
+                    _ => {}
                 }
             }
         });

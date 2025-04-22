@@ -134,28 +134,31 @@ impl LaunchpadX {
     /// Initialize the controller (set to Programmer Mode)
     fn initialize(&self) -> Result<(), Box<dyn Error>> {
         if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
-            // Launchpad X uses SysEx for mode switching - enter Programmer Mode (Device Mode 1)
+            // Set Launchpad X to Programmer Mode with proper SysEx
             info!("Setting Launchpad X to Programmer Mode");
-            // Complete SysEx message with terminating 0xF7
-            let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0, 0x07, 0xF7];
+
+            // This is the correct SysEx to enter Programmer Mode (0x01 at the end is key)
+            let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7];
             conn.send(&sysex)?;
 
-            // Wait a bit for the mode change to take effect
+            // Wait for mode switch to complete
             thread::sleep(Duration::from_millis(100));
 
-            // Clear all pads
+            // Clear all LEDs first
             self.clear_leds_internal(conn)?;
 
-            // Set all pads to very dim to show it's ready, except the top row which is blue for modifier pads
-            for row in 0..8 {
+            // Set the modifier row (top row) to blue
+            for col in 0..8 {
+                let note = self.rc_to_pad(0, col);
+                let msg = [0x90, note, 45]; // Blue color
+                conn.send(&msg)?;
+            }
+
+            // Set other pads to very dim state
+            for row in 1..8 {
                 for col in 0..8 {
                     let note = self.rc_to_pad(row, col);
-                    let color_value = if row == 7 {
-                        45 // Blue color for top row (modifier pads)
-                    } else {
-                        1  // Very dim color for other pads
-                    };
-                    let msg = [0x90, note, color_value];
+                    let msg = [0x90, note, 1]; // Very dim
                     conn.send(&msg)?;
                 }
             }
@@ -205,9 +208,15 @@ impl LaunchpadX {
     fn clear_leds_internal(&self, conn: &mut MidiOutputConnection) -> Result<(), Box<dyn Error>> {
         debug!("Clearing all Launchpad X LEDs");
 
-        // Standard way to clear all LEDs - use SysEx to reset all pad LEDs at once
-        //let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x00, 0x00, 0xF7];
-        //conn.send(&sysex)?;
+        // We'll clear each pad individually rather than using SysEx
+        // This is more reliable on some controllers
+        for row in 0..8 {
+            for col in 0..8 {
+                let pad = self.rc_to_pad(row, col);
+                let msg = [0x90, pad, 0]; // Turn off with velocity 0
+                conn.send(&msg)?;
+            }
+        }
 
         Ok(())
     }
@@ -289,44 +298,64 @@ impl LaunchpadX {
 
 impl MidiGridController for LaunchpadX {
     fn handle_note_input(&mut self, note: u8, velocity: u8) {
-        // Filter out aftertouch (velocity > 0 for note-on only)
+        // Only process note-on events (velocity > 0)
         if velocity > 0 {
             if let Some(pad) = note_to_pad_index(note) {
-                debug!("Simulated note input: note={}, mapped to pad={}", note, pad);
-                let _ = self.event_bus.publish(Event::PadPressed { pad, velocity });
+                debug!("Received note: {}, mapped to pad: {}", note, pad);
+
+                // Publish event through the event bus
+                self.event_bus.try_publish(Event::PadPressed {
+                    pad,
+                    velocity
+                });
+            } else {
+                debug!("Note {} does not map to a valid pad", note);
             }
         }
-        // Ignore note-off events (velocity = 0)
     }
 
     fn set_led(&mut self, pad: u8, color: Rgb) {
-        // Convert pad to row/column (our internal 0-63 index)
-        let (row, col) = pad_to_row_col(pad);
+        // Calculate row/column
+        let row = (pad / 8) as usize;
+        let col = (pad % 8) as usize;
 
-        // Store in buffer
+        // Only update if in range and color is actually different
         if row < 8 && col < 8 {
-            self.led_buffer[row][col] = color;
-        }
+            // Get the current color from the buffer
+            let current_color = self.led_buffer[row][col];
 
-        // Send MIDI message to update LED
-        if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
-            let launchpad_pad = self.pad_to_note(pad);
+            // Only update if color has changed to avoid unnecessary MIDI traffic
+            if current_color != color {
+                // Update buffer
+                self.led_buffer[row][col] = color;
 
-            // For frequent updates, use Note On with velocity color (faster)
-            let color_index = self.rgb_to_velocity(color);
-            let msg = [0x90, launchpad_pad, color_index];
+                // Send MIDI message
+                if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
+                    let launchpad_pad = self.pad_to_note(pad);
+                    let color_index = self.rgb_to_velocity(color);
 
-            if let Err(e) = conn.send(&msg) {
-                error!("Failed to set LED color: {}", e);
+                    // Use Note On message for faster and more reliable updates
+                    let msg = [0x90, launchpad_pad, color_index];
+
+                    if let Err(e) = conn.send(&msg) {
+                        error!("Failed to set LED color: {}", e);
+                    }
+                }
             }
         }
     }
 
     fn clear_leds(&mut self) {
-        // Reset the LED buffer
-        self.led_buffer = [[Rgb::black(); 8]; 8];
+        debug!("Clearing all Launchpad X LEDs");
 
-        // Send MIDI message to clear all LEDs
+        // Reset our buffer first
+        for row in 0..8 {
+            for col in 0..8 {
+                self.led_buffer[row][col] = Rgb::black();
+            }
+        }
+
+        // Then send to hardware
         if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
             if let Err(e) = self.clear_leds_internal(conn) {
                 error!("Failed to clear LEDs: {}", e);
@@ -335,19 +364,21 @@ impl MidiGridController for LaunchpadX {
     }
 
     fn refresh_state(&mut self) {
-        // Update all LEDs based on current buffer
+        // Update all LEDs from our buffer
         if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
             for row in 0..8 {
                 for col in 0..8 {
                     let launchpad_pad = self.rc_to_pad(row, col);
                     let color = self.led_buffer[row][col];
-
-                    // Color to velocity for faster updates
                     let color_index = self.rgb_to_velocity(color);
-                    let msg = [0x90, launchpad_pad, color_index];
 
-                    if let Err(e) = conn.send(&msg) {
-                        error!("Failed to refresh LED state: {}", e);
+                    // Avoid unnecessary 0 values (they might cause mode issues)
+                    if color_index > 0 {
+                        let msg = [0x90, launchpad_pad, color_index];
+
+                        if let Err(e) = conn.send(&msg) {
+                            error!("Failed to refresh LED state: {}", e);
+                        }
                     }
                 }
             }

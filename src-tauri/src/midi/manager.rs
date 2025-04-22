@@ -221,53 +221,142 @@ impl MidiManager {
     /// Redraw all LEDs based on current state
     pub fn update_controller_leds(&self) -> Result<(), Box<dyn Error>> {
         if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
-            ctrl.clear_leds();
             if let Some(ref state) = self.state {
                 let st = state.read().unwrap();
+
+                // Clear all LEDs to start with a clean state
+                ctrl.clear_leds();
+
+                // Top row: Bank indicators (0-7)
                 for i in 0..8 {
                     let color = if i == st.current_bank {
-                        Rgb::new(0, 64, 255)
+                        // Current bank: bright blue
+                        Rgb::new(0, 128, 255)
                     } else if i < st.project.banks.len() {
-                        Rgb::new(0, 32, 128)
+                        // Available bank: medium blue
+                        Rgb::new(0, 64, 128)
                     } else {
-                        Rgb::black()
+                        // Unavailable bank: dim blue
+                        Rgb::new(0, 32, 64)
                     };
+
                     ctrl.set_led(i as u8, color);
                 }
+
+                // Snap pads (8-63)
                 if st.current_bank < st.project.banks.len() {
                     let bank = &st.project.banks[st.current_bank];
-                    for idx in 0..bank.snaps.len() {
+
+                    for idx in 0..bank.snaps.len().min(56) {
                         let pad = (idx + 8) as u8;
-                        let color = if idx == st.current_snap { Rgb::orange() } else { Rgb::gray() };
+
+                        let has_snap = !bank.snaps[idx].name.is_empty();
+                        let is_current = idx == st.current_snap;
+
+                        let color = if is_current {
+                            // Current snap: orange
+                            Rgb::orange()
+                        } else if has_snap {
+                            // Available snap: gray
+                            Rgb::gray()
+                        } else {
+                            // Empty slot: very dim
+                            Rgb::new(16, 16, 16)
+                        };
+
                         ctrl.set_led(pad, color);
                     }
                 }
+
+                // Ensure all changes are sent to the device
                 ctrl.refresh_state();
             }
         }
+
         Ok(())
     }
 
     /// Handle a pad press event from the hardware controller
     pub async fn handle_pad_pressed(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
-        if velocity == 0 { return Ok(()); }
+        if velocity == 0 { return Ok(()); } // Ignore note-off events
+
+        info!("Handling pad press: pad={}, velocity={}", pad, velocity);
+
         if let Some(ref state) = self.state {
-            let guard = state.read().unwrap();
+            // Handle top row pads for bank selection
             if pad < 8 {
-                // TODO: publish Event::BankSelected
-                return Ok(());
-            }
-            let snap_id = (pad - 8) as usize;
-            let bank_id = guard.current_bank;
-            if bank_id < guard.project.banks.len() {
-                let bank = &guard.project.banks[bank_id];
-                if snap_id < bank.snaps.len() && !bank.snaps[snap_id].name.is_empty() {
-                    drop(guard);
-                    self.event_bus.publish(Event::SnapSelected { bank: bank_id, snap_id })?;
+                let mut state_guard = state.write().unwrap();
+
+                if pad < state_guard.project.banks.len() as u8 {
+                    // Change bank
+                    state_guard.current_bank = pad as usize;
+                    drop(state_guard);
+
+                    // Publish event
+                    let _ = self.event_bus.publish(Event::BankSelected {
+                        bank_id: pad as usize
+                    });
+
+                    // Update controller display
                     self.update_controller_leds()?;
                 }
+                return Ok(());
             }
+
+            // Non-top-row pads are for snap selection
+            let snap_id = (pad - 8) as usize;
+            let bank_id;
+            let cc_values: Vec<(u8, u8)>;
+
+            // First check if this is a valid snap
+            {
+                let guard = state.read().unwrap();
+                bank_id = guard.current_bank;
+
+                if bank_id >= guard.project.banks.len() {
+                    return Ok(());  // Invalid bank
+                }
+
+                let bank = &guard.project.banks[bank_id];
+                if snap_id >= bank.snaps.len() || bank.snaps[snap_id].name.is_empty() {
+                    return Ok(());  // Invalid snap
+                }
+
+                // Collect the parameter values we'll need to send
+                cc_values = guard.project.parameters.iter().enumerate()
+                    .filter_map(|(idx, param)| {
+                        if idx < bank.snaps[snap_id].values.len() {
+                            let value = bank.snaps[snap_id].values[idx];
+                            Some((param.cc, value))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+            }
+
+            // Update the current state (snap selection)
+            {
+                let mut state_guard = state.write().unwrap();
+                state_guard.current_snap = snap_id;
+            }
+
+            // Send the selected snap's values via MIDI CCs
+            if !cc_values.is_empty() {
+                info!("Sending {} CC values for snap {}", cc_values.len(), snap_id);
+                self.send_snap_values(&cc_values)?;
+            }
+
+            // Publish the event
+            let _ = self.event_bus.publish(Event::SnapSelected {
+                bank: bank_id,
+                snap_id
+            });
+
+            // Update the controller LEDs
+            self.update_controller_leds()?;
         }
+
         Ok(())
     }
 }
