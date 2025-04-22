@@ -162,7 +162,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     for intensity in (0..=100).chain((0..100).rev()) {
         controller.clear_leds();
         for pad in 0..64 {
-            let brightness = intensity as u8 * 255 / 100;
+            // Calculate brightness as a percentage of 255, avoiding overflow
+            let brightness = ((intensity as u32 * 255) / 100) as u8;
             controller.set_led(pad, Rgb::new(brightness, brightness, brightness));
         }
         controller.refresh_state();

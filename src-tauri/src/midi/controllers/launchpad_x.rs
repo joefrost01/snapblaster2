@@ -136,7 +136,8 @@ impl LaunchpadX {
         if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
             // Launchpad X uses SysEx for mode switching - enter Programmer Mode (Device Mode 1)
             info!("Setting Launchpad X to Programmer Mode");
-            let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x07];
+            // Complete SysEx message with terminating 0xF7
+            let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0, 0x07, 0xF7];
             conn.send(&sysex)?;
 
             // Wait a bit for the mode change to take effect
@@ -168,41 +169,13 @@ impl LaunchpadX {
             warn!("Invalid row/col: {}/{}", row, col);
             return 0;
         }
-
+        
         // In Programmer Mode, pad numbering for the main grid:
         // 11 12 13 14 15 16 17 18  (top row)
         // 21 22 23 24 25 26 27 28  (second row)
         // ... and so on
         // First digit is row+1, second digit is col+1
         (10 * (row + 1) + (col + 1)) as u8
-    }
-
-    /// Converts Launchpad note to our internal pad index (0-63)
-    fn note_to_pad_index(&self, note: u8) -> Option<u8> {
-        // LaunchPad X in custom mode 5 sends notes from B-2 to E-5
-        // This maps to MIDI note numbers 35-104
-
-        // Check if it's a valid 2-digit format note (for programmer mode)
-        if note >= 11 && note <= 88 && note % 10 != 0 && note % 10 <= 8 && note / 10 <= 8 {
-            // Extract row and column
-            let row = (note / 10) - 1;
-            let col = (note % 10) - 1;
-
-            // Convert to our 0-63 pad index
-            return Some(row * 8 + col);
-        }
-
-        // Try the standard MIDI note mapping (B-2 to E-5 range)
-        if note >= 35 && note <= 104 {
-            let row = (note - 35) / 8;
-            let col = (note - 35) % 8;
-
-            if row < 8 && col < 8 {
-                return Some(row * 8 + col);
-            }
-        }
-
-        None
     }
 
     /// Convert pad index (0-63) to Launchpad X note
@@ -220,8 +193,8 @@ impl LaunchpadX {
         debug!("Clearing all Launchpad X LEDs");
 
         // Standard way to clear all LEDs - use SysEx to reset all pad LEDs at once
-        let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x00, 0x00, 0xF7];
-        conn.send(&sysex)?;
+        //let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x00, 0x00, 0xF7];
+        //conn.send(&sysex)?;
 
         Ok(())
     }
@@ -305,7 +278,7 @@ impl MidiGridController for LaunchpadX {
     fn handle_note_input(&mut self, note: u8, velocity: u8) {
         // Filter out aftertouch (velocity > 0 for note-on only)
         if velocity > 0 {
-            if let Some(pad) = self.note_to_pad_index(note) {
+            if let Some(pad) = note_to_pad_index(note) {
                 debug!("Simulated note input: note={}, mapped to pad={}", note, pad);
                 let _ = self.event_bus.publish(Event::PadPressed { pad, velocity });
             }
@@ -392,6 +365,23 @@ fn find_launchpad_port<T>(ports: &[T], conn: &impl PortInfos<T>, name: &str) -> 
 where
     T: Clone,
 {
+    // First try to find a port with both the controller name and "MIDI" in it
+    // This ensures we get the MIDI port and not the DAW port
+    let midi_port = ports
+        .iter()
+        .find(|port| {
+            if let Ok(port_name) = conn.port_name(port) {
+                port_name.contains(name) && port_name.contains("MIDI")
+            } else {
+                false
+            }
+        });
+
+    if midi_port.is_some() {
+        return midi_port.cloned();
+    }
+
+    // Fallback to the original behavior if no MIDI-specific port is found
     ports
         .iter()
         .find(|port| {

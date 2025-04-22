@@ -72,9 +72,12 @@ impl MidiManager {
 
     /// Open hardware MIDI ports and wire up callbacks that publish PadPressed events
     fn connect_hardware_ports(&self, controller_name: &str) -> Result<(), Box<dyn Error>> {
-        // INPUT
+        // INPUT - Connect to the hardware controller's input port
+        // This allows us to receive note messages from the controller
         let mut midi_in = MidiInput::new("Snap-Blaster Input")?;
         midi_in.ignore(Ignore::None);
+
+        let mut found_input = false;
         for port in midi_in.ports() {
             let name = midi_in.port_name(&port)?;
             if name.contains(controller_name) {
@@ -83,9 +86,11 @@ impl MidiManager {
                     &port,
                     "snapblaster-in",
                     move |_ts, msg: &[u8], _| {
+                        // Process note-on messages (0x9n where n is the channel)
                         if msg.len() >= 3 && (msg[0] & 0xF0) == 0x90 {
                             let note = msg[1];
                             let vel = msg[2];
+                            debug!("Received note from hardware: note={}, vel={}", note, vel);
                             let _ = eb.publish(Event::PadPressed { pad: note, velocity: vel });
                         }
                     },
@@ -93,20 +98,33 @@ impl MidiManager {
                 )?;
                 *self.input_connection.lock().unwrap() = Some(conn);
                 info!("Connected MIDI input port: {}", name);
+                found_input = true;
                 break;
             }
         }
 
-        // OUTPUT
+        if !found_input {
+            warn!("Could not find MIDI input port for {}", controller_name);
+        }
+
+        // OUTPUT - Connect to the hardware controller's output port
+        // This allows us to send LED updates to the controller
         let midi_out = MidiOutput::new("Snap-Blaster Output")?;
+
+        let mut found_output = false;
         for port in midi_out.ports() {
             let name = midi_out.port_name(&port)?;
             if name.contains(controller_name) {
                 let conn = midi_out.connect(&port, "snapblaster-out")?;
                 self.output_connections.lock().unwrap().push((name.clone(), conn));
                 info!("Connected MIDI output port: {}", name);
+                found_output = true;
                 break;
             }
+        }
+
+        if !found_output {
+            warn!("Could not find MIDI output port for {}", controller_name);
         }
 
         Ok(())
@@ -116,29 +134,47 @@ impl MidiManager {
     pub fn initialize_controller(&self, controller_name: &str) -> Result<(), Box<dyn Error>> {
         info!("Initializing controller: {}", controller_name);
 
-        // 1) Virtual port for DAW
+        // 1) Create virtual port for DAW output
+        // This port allows the DAW to receive MIDI from Snap-Blaster
         if let Err(e) = self.create_virtual_port("Snap-Blaster") {
             warn!("Failed to create virtual port: {}", e);
+        } else {
+            info!("Created virtual MIDI port 'Snap-Blaster' for DAW communication");
         }
 
-        // 2) Real hardware I/O
+        // 2) Connect to real hardware I/O ports
+        // This establishes connections to the physical controller
         if let Err(e) = self.connect_hardware_ports(controller_name) {
             warn!("Failed to connect hardware MIDI ports: {}", e);
+        } else {
+            info!("Successfully connected to {} hardware ports", controller_name);
         }
 
-        // 3) Grid controller abstraction (for LED set_led, clear_leds, etc.)
+        // 3) Create grid controller abstraction
+        // This provides a unified interface for LED control and input handling
         match create_controller(controller_name, self.event_bus.clone()) {
             Ok(ctrl) => {
+                // Store the controller
                 *self.controller.lock().unwrap() = Some(ctrl);
-                self.update_controller_leds()?;
+
+                // Initialize controller LEDs based on current state
+                if let Err(e) = self.update_controller_leds() {
+                    warn!("Failed to update controller LEDs: {}", e);
+                } else {
+                    info!("Updated controller LEDs based on current state");
+                }
+
                 info!("Grid controller initialized: {}", controller_name);
 
                 // 4) Subscribe to PadPressed events and route to handle_pad_pressed
+                // This handles user interaction with the controller
                 let mut subscriber = self.event_bus.subscribe();
                 let manager = self.clone();
                 tokio::spawn(async move {
+                    info!("Started event handler for PadPressed events");
                     while let Ok(event) = subscriber.recv().await {
                         if let Event::PadPressed { pad, velocity } = event {
+                            debug!("Received PadPressed event: pad={}, velocity={}", pad, velocity);
                             if let Err(err) = manager.handle_pad_pressed(pad, velocity).await {
                                 error!("Error handling pad press: {}", err);
                             }
