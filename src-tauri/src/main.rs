@@ -2,21 +2,24 @@
 
 use snapblaster::app::App;
 use snapblaster::events::{Event, EventBus, MorphCurve};
-
+use snapblaster::midi::manager::MidiManager;
 use snapblaster::model::new_shared_state;
 use snapblaster::model::{Parameter, SharedState, Snap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State, Window};
-use tracing::{debug, error};
-use snapblaster::midi::manager::MidiManager;
+use tracing::{debug, error, info};
+
+// Import the correct LinkSynchronizer directly
+use snapblaster::link::LinkSynchronizer;
 
 // Application state accessible from Tauri commands
 struct AppState {
     app: Mutex<App>,
     event_bus: EventBus,
     shared_state: SharedState,
-    midi_manager: Option<Arc<MidiManager>>, // Change to Option
+    midi_manager: Option<Arc<MidiManager>>,
+    link_sync: Option<LinkSynchronizer>,
 }
 
 // Tauri commands that bridge between the UI and Rust backend
@@ -66,7 +69,10 @@ async fn set_controller(name: String, state: State<'_, AppState>) -> Result<(), 
 #[tauri::command]
 async fn get_project(state: State<'_, AppState>) -> Result<String, String> {
     let state_guard = state.shared_state.read().unwrap();
-    println!("Getting project state: {} parameters", state_guard.project.parameters.len());
+    println!(
+        "Getting project state: {} parameters",
+        state_guard.project.parameters.len()
+    );
 
     // Print debug info about the current project
     for (i, param) in state_guard.project.parameters.iter().enumerate() {
@@ -81,15 +87,22 @@ async fn get_project(state: State<'_, AppState>) -> Result<String, String> {
 async fn save_project(path: String, state: State<'_, AppState>) -> Result<(), String> {
     // Get the shared state directly to ensure we're saving the current state
     let state_guard = state.shared_state.read().unwrap();
-    println!("Before save - Project has {} parameters", state_guard.project.parameters.len());
+    println!(
+        "Before save - Project has {} parameters",
+        state_guard.project.parameters.len()
+    );
 
     let app = state.app.lock().unwrap();
-    let result = app.save_project(&PathBuf::from(path))
+    let result = app
+        .save_project(&PathBuf::from(path))
         .map_err(|e| e.to_string());
 
     // Double check the parameters are being saved
     if result.is_ok() {
-        println!("Project saved. Parameters in state: {}", state_guard.project.parameters.len());
+        println!(
+            "Project saved. Parameters in state: {}",
+            state_guard.project.parameters.len()
+        );
     }
 
     result
@@ -156,9 +169,17 @@ async fn select_snap(
     {
         let state_guard = state.shared_state.read().unwrap();
 
-        params_to_send = state_guard.project.parameters.iter().enumerate()
+        params_to_send = state_guard
+            .project
+            .parameters
+            .iter()
+            .enumerate()
             .filter_map(|(idx, param)| {
-                if idx < state_guard.project.banks[bank_id].snaps[snap_id].values.len() {
+                if idx
+                    < state_guard.project.banks[bank_id].snaps[snap_id]
+                    .values
+                    .len()
+                {
                     let value = state_guard.project.banks[bank_id].snaps[snap_id].values[idx];
                     Some((param.cc, value))
                 } else {
@@ -180,7 +201,10 @@ async fn select_snap(
     // Send the event
     state
         .event_bus
-        .publish(Event::SnapSelected { bank: bank_id, snap_id })
+        .publish(Event::SnapSelected {
+            bank: bank_id,
+            snap_id,
+        })
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
@@ -282,6 +306,7 @@ async fn start_morph(
     to_snap: usize,
     duration_bars: u8,
     curve_type: String,
+    quantize: bool, // Add quantize parameter
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // Map the curve type string to the enum
@@ -303,6 +328,7 @@ async fn start_morph(
             to_snap,
             duration_bars,
             curve_type: curve,
+            quantize, // Pass through the quantize flag
         })
         .map(|_| ())
         .map_err(|e| e.to_string())
@@ -340,8 +366,12 @@ async fn add_parameter(
         }
     }
 
-    println!("Parameter added: {} (CC: {}), Total parameters: {}",
-             name, cc, state_guard.project.parameters.len());
+    println!(
+        "Parameter added: {} (CC: {}), Total parameters: {}",
+        name,
+        cc,
+        state_guard.project.parameters.len()
+    );
 
     Ok(())
 }
@@ -366,7 +396,10 @@ async fn update_parameter(
     param.description = description.clone();
     param.cc = cc;
 
-    println!("Parameter updated: ID {}, name '{}', CC {}", param_id, name, cc);
+    println!(
+        "Parameter updated: ID {}, name '{}', CC {}",
+        param_id, name, cc
+    );
 
     Ok(())
 }
@@ -394,11 +427,14 @@ async fn add_snap(
 
     // Ensure we have space for this snap position
     if pad_index >= bank.snaps.len() {
-        bank.snaps.resize(pad_index + 1, Snap {
-            name: String::new(),
-            description: String::new(),
-            values: vec![],
-        });
+        bank.snaps.resize(
+            pad_index + 1,
+            Snap {
+                name: String::new(),
+                description: String::new(),
+                values: vec![],
+            },
+        );
     }
 
     // Set the snap at the specified pad position
@@ -437,6 +473,114 @@ async fn update_snap_description(
     Ok(())
 }
 
+/// Get Link status and peer count
+#[tauri::command]
+async fn get_link_status(state: State<'_, AppState>) -> Result<String, String> {
+    if let Some(link_sync) = &state.link_sync {
+        let peers = link_sync.num_peers().await;
+        let playing = link_sync.is_playing().await;
+
+        // For the tempo, we need to subscribe to the tempo event
+        let mut receiver = state.event_bus.subscribe();
+        let _ = state.event_bus.publish(Event::RequestLinkTempo);
+
+        // Wait for the tempo response with a timeout
+        let timeout = tokio::time::Duration::from_millis(200);
+        let tempo = match tokio::time::timeout(timeout, receiver.recv()).await {
+            Ok(Ok(Event::LinkTempoChanged { tempo })) => tempo,
+            _ => 120.0, // Default tempo if we can't get it
+        };
+
+        let status = serde_json::json!({
+            "connected": peers > 0,
+            "peers": peers,
+            "playing": playing,
+            "tempo": tempo
+        });
+
+        Ok(status.to_string())
+    } else {
+        Err("Link synchronizer not initialized".to_string())
+    }
+}
+
+/// Set Link tempo
+#[tauri::command]
+async fn set_link_tempo(tempo: f64, state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(link_sync) = &state.link_sync {
+        link_sync.set_tempo(tempo).await;
+
+        // Publish event to notify all components
+        let _ = state.event_bus.publish(Event::LinkTempoChanged { tempo });
+
+        Ok(())
+    } else {
+        Err("Link synchronizer not initialized".to_string())
+    }
+}
+
+/// Enable or disable Link
+#[tauri::command]
+async fn set_link_enabled(enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(link_sync) = &state.link_sync {
+        link_sync.enable(enabled).await;
+
+        // Get peer count after state change
+        let peers = link_sync.num_peers().await;
+
+        // Publish event with updated status
+        let _ = state.event_bus.publish(Event::LinkStatusChanged {
+            connected: peers > 0,
+            peers
+        });
+
+        Ok(())
+    } else {
+        Err("Link synchronizer not initialized".to_string())
+    }
+}
+
+/// Start Link transport
+#[tauri::command]
+async fn start_link_transport(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(link_sync) = &state.link_sync {
+        link_sync.start_transport().await;
+
+        // Publish event to notify all components
+        let _ = state.event_bus.publish(Event::LinkTransportChanged { playing: true });
+
+        Ok(())
+    } else {
+        Err("Link synchronizer not initialized".to_string())
+    }
+}
+
+/// Stop Link transport
+#[tauri::command]
+async fn stop_link_transport(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(link_sync) = &state.link_sync {
+        link_sync.stop_transport().await;
+
+        // Publish event to notify all components
+        let _ = state.event_bus.publish(Event::LinkTransportChanged { playing: false });
+
+        Ok(())
+    } else {
+        Err("Link synchronizer not initialized".to_string())
+    }
+}
+
+/// Set quantum (beats per bar) for Link
+#[tauri::command]
+async fn set_link_quantum(beats: f64, state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(link_sync) = &state.link_sync {
+        link_sync.set_quantum(beats).await;
+        Ok(())
+    } else {
+        Err("Link synchronizer not initialized".to_string())
+    }
+}
+
 // Set up event listeners and forward events to the frontend
 fn setup_event_listener(window: Window, event_bus: EventBus) {
     let mut rx = event_bus.subscribe();
@@ -462,13 +606,18 @@ async fn main() {
     let event_bus = EventBus::default();
 
     // Pass the shared state to the App constructor
-    let mut app = App::new(shared_state.clone(), event_bus.clone())
-        .expect("Failed to create application");
+    let mut app =
+        App::new(shared_state.clone(), event_bus.clone()).expect("Failed to create application");
     app.init().expect("Failed to initialize application");
 
     // Create a clone of event_bus for the setup closure
     let setup_event_bus = event_bus.clone();
     let midi_manager = app.midi_manager();
+
+    // Get the LinkSynchronizer directly from the app
+    let link_sync = app.link_sync();
+
+    // We don't need to start it here - it was already started in app.init()
 
     // Set up event handler for controller input
     if let Some(midi_manager) = &midi_manager {
@@ -481,7 +630,10 @@ async fn main() {
 
             while let Ok(event) = rx.recv().await {
                 if let Event::PadPressed { pad, velocity } = event {
-                    debug!("Received PadPressed event in main handler: pad={}, velocity={}", pad, velocity);
+                    debug!(
+                        "Received PadPressed event in main handler: pad={}, velocity={}",
+                        pad, velocity
+                    );
                     if let Err(e) = midi_manager_clone.handle_pad_pressed(pad, velocity).await {
                         error!("Error handling pad press: {}", e);
                     } else {
@@ -501,20 +653,23 @@ async fn main() {
             while let Ok(event) = rx.recv().await {
                 // Update controller LEDs when state changes
                 match event {
-                    Event::ProjectLoaded |
-                    Event::SnapSelected { .. } |
-                    Event::BankSelected { .. } => {
+                    Event::ProjectLoaded
+                    | Event::SnapSelected { .. }
+                    | Event::BankSelected { .. } => {
                         // No need for Option pattern - it's an Arc directly
                         if let Err(e) = midi_manager_for_events.update_controller_leds() {
                             eprintln!("Failed to update controller LEDs after state change: {}", e);
                         }
-                    },
+                    }
                     _ => {}
                 }
             }
         });
     }
-    
+
+    // Clone event_bus for AppState before we move it into the setup closure
+    let app_state_event_bus = event_bus.clone();
+
     // Create Tauri application
     tauri::Builder::default()
         .setup(move |app_handle| {
@@ -522,15 +677,64 @@ async fn main() {
             let window = app_handle.get_window("main").unwrap();
 
             // Set up event listeners - use the cloned event_bus
-            setup_event_listener(window, setup_event_bus);
+            setup_event_listener(window.clone(), setup_event_bus);
+
+            // Set up Link event handler
+            let window_for_link = window.clone();
+            let event_bus_for_link = event_bus.clone();
+
+            tokio::spawn(async move {
+                let mut rx = event_bus_for_link.subscribe();
+
+                while let Ok(event) = rx.recv().await {
+                    match event {
+                        Event::LinkStatusChanged { connected, peers } => {
+                            // Send to frontend
+                            let status = serde_json::json!({
+                                "type": "link_status",
+                                "connected": connected,
+                                "peers": peers
+                            });
+
+                            if let Err(e) = window_for_link.emit("link-event", status.to_string()) {
+                                error!("Failed to emit link status: {}", e);
+                            }
+                        },
+                        Event::LinkTempoChanged { tempo } => {
+                            // Send to frontend
+                            let status = serde_json::json!({
+                                "type": "link_tempo",
+                                "tempo": tempo
+                            });
+
+                            if let Err(e) = window_for_link.emit("link-event", status.to_string()) {
+                                error!("Failed to emit link tempo: {}", e);
+                            }
+                        },
+                        Event::LinkTransportChanged { playing } => {
+                            // Send to frontend
+                            let status = serde_json::json!({
+                                "type": "link_transport",
+                                "playing": playing
+                            });
+
+                            if let Err(e) = window_for_link.emit("link-event", status.to_string()) {
+                                error!("Failed to emit link transport: {}", e);
+                            }
+                        },
+                        _ => {} // Ignore other events
+                    }
+                }
+            });
 
             Ok(())
         })
         .manage(AppState {
             app: Mutex::new(app),
-            event_bus,
+            event_bus: app_state_event_bus,  // Use the cloned event_bus here
             shared_state,
             midi_manager,
+            link_sync,
         })
         .invoke_handler(tauri::generate_handler![
             list_midi_inputs,
@@ -550,7 +754,13 @@ async fn main() {
             update_snap_description,
             set_controller,
             send_wiggle,
-            debug_state
+            debug_state,
+            get_link_status,
+            set_link_tempo,
+            set_link_enabled,
+            start_link_transport,
+            stop_link_transport,
+            set_link_quantum,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");

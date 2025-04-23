@@ -649,3 +649,86 @@ body.processing .grid-pad {
     50% { opacity: 0.3; }
     100% { opacity: 1; }
 }
+
+/* Link controls container */
+.link-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+}
+
+/* BPM input container */
+.bpm-container {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* BPM input styling */
+input.bpm {
+    width: 40px;
+    text-align: center;
+    background-color: var(--bg-light);
+    border: 1px solid var(--border-light);
+    padding: 4px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+/* Link status container */
+.link-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.link-status:hover {
+    background-color: var(--bg-lighter);
+}
+
+/* Link status indicator */
+#link-status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+}
+
+#link-status-indicator.inactive {
+    background-color: #6b7280;
+}
+
+#link-status-indicator.active {
+    background-color: #10b981;
+}
+
+#link-status-indicator.playing {
+    animation: pulse-animation 1s infinite;
+}
+
+/* Link status text */
+#link-status-text {
+    transition: color 0.3s;
+}
+
+#link-status-text.connected {
+    color: #10b981;
+}
+
+#link-status-text.disconnected {
+    color: #6b7280;
+}
+
+/* Pulse animation for the indicator when playing */
+@keyframes pulse-animation {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}

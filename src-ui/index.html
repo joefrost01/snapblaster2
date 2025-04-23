@@ -16,8 +16,17 @@
             <option value="Generic">Generic (No Hardware)</option>
             <!-- MIDI controllers will be populated dynamically -->
         </select>
-        <div class="bpm-label" ><label>BPM: </label><input class="bpm" value="120"></div>
-        <div class="link-status">Link: <span id="link-status-text">Disconnected</span></div>
+        <div class="link-controls">
+            <div class="bpm-container">
+                <label for="bpm-input">BPM: </label>
+                <input id="bpm-input" class="bpm" type="number" min="20" max="999" value="120">
+            </div>
+            <div class="link-status">
+                <span class="link-label">Link:</span>
+                <span id="link-status-indicator" class="inactive"></span>
+                <span id="link-status-text" class="disconnected">Disconnected</span>
+            </div>
+        </div>
     </div>
     <div class="right-group">
         <button id="ai-btn" class="header-btn">🤖 AI</button>

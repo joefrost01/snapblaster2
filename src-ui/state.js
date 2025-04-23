@@ -149,6 +149,37 @@ function setupEventListeners() {
         // Update morph progress indicator if we add one
         console.log(`Morph progress: ${Math.round(progress * 100)}%`);
     });
+
+    eventBus.on('link-status-changed', (data) => {
+        // Update UI elements if needed
+        const linkStatusText = document.getElementById('link-status-text');
+        const linkStatusIndicator = document.getElementById('link-status-indicator');
+
+        if (linkStatusText) {
+            if (data.connected) {
+                linkStatusText.textContent = `Connected (${data.peers} peer${data.peers !== 1 ? 's' : ''})`;
+                linkStatusText.classList.add('connected');
+                linkStatusText.classList.remove('disconnected');
+            } else {
+                linkStatusText.textContent = 'Disconnected';
+                linkStatusText.classList.add('disconnected');
+                linkStatusText.classList.remove('connected');
+            }
+        }
+
+        if (linkStatusIndicator) {
+            linkStatusIndicator.classList.toggle('active', data.connected);
+            linkStatusIndicator.classList.toggle('inactive', !data.connected);
+        }
+    });
+
+    eventBus.on('link-tempo-changed', (data) => {
+        // Update BPM input if needed
+        const bpmInput = document.querySelector('.bpm');
+        if (bpmInput) {
+            bpmInput.value = Math.round(data.tempo);
+        }
+    });
 }
 
 // Helper functions for state manipulation

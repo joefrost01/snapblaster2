@@ -186,6 +186,35 @@ async function initializeListeners() {
             }
         });
 
+        await listen('link-event', (event) => {
+            try {
+                const eventData = JSON.parse(event.payload);
+
+                switch (eventData.type) {
+                    case 'link_status':
+                        eventBus.emit('link-status-changed', {
+                            connected: eventData.connected,
+                            peers: eventData.peers
+                        });
+                        break;
+
+                    case 'link_tempo':
+                        eventBus.emit('link-tempo-changed', {
+                            tempo: eventData.tempo
+                        });
+                        break;
+
+                    case 'link_transport':
+                        eventBus.emit('link-transport-changed', {
+                            playing: eventData.playing
+                        });
+                        break;
+                }
+            } catch (err) {
+                console.error('Error parsing Link event:', err);
+            }
+        });
+
         initialized = true;
         console.log("Tauri event listeners initialized");
     } catch (err) {
@@ -428,12 +457,12 @@ const api = {
     },
 
     // Start morph between snaps
-    async startMorph(fromSnap, toSnap, durationBars, curveType) {
+    async startMorph(fromSnap, toSnap, durationBars, curveType, quantize = false) {
         if (!tauriReady) {
             return new Promise((resolve, reject) => {
                 whenTauriReady(async () => {
                     try {
-                        await this.startMorph(fromSnap, toSnap, durationBars, curveType);
+                        await this.startMorph(fromSnap, toSnap, durationBars, curveType, quantize);
                         resolve();
                     } catch (err) {
                         reject(err);
@@ -443,7 +472,7 @@ const api = {
         }
 
         try {
-            await invoke('start_morph', { fromSnap, toSnap, durationBars, curveType });
+            await invoke('start_morph', { fromSnap, toSnap, durationBars, curveType, quantize });
         } catch (err) {
             console.error('Error starting morph:', err);
             throw err;
@@ -584,6 +613,144 @@ const api = {
             await invoke('send_wiggle', { cc, values });
         } catch (err) {
             console.error('Error sending wiggle:', err);
+            throw err;
+        }
+    },
+
+    async getLinkStatus() {
+        if (!tauriReady) {
+            return new Promise((resolve) => {
+                whenTauriReady(async () => {
+                    resolve(await this.getLinkStatus());
+                });
+            });
+        }
+
+        try {
+            const statusJson = await invoke('get_link_status');
+            return JSON.parse(statusJson);
+        } catch (err) {
+            console.error('Error getting Link status:', err);
+            return {
+                connected: false,
+                peers: 0,
+                playing: false,
+                tempo: 120.0
+            };
+        }
+    },
+
+    // Set Link tempo
+    async setLinkTempo(tempo) {
+        if (!tauriReady) {
+            return new Promise((resolve, reject) => {
+                whenTauriReady(async () => {
+                    try {
+                        await this.setLinkTempo(tempo);
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            });
+        }
+
+        try {
+            // Clamp tempo to reasonable range
+            const clampedTempo = Math.max(20, Math.min(999, tempo));
+            await invoke('set_link_tempo', { tempo: clampedTempo });
+        } catch (err) {
+            console.error('Error setting Link tempo:', err);
+            throw err;
+        }
+    },
+
+    async setLinkEnabled(enabled) {
+        if (!tauriReady) {
+            return new Promise((resolve, reject) => {
+                whenTauriReady(async () => {
+                    try {
+                        await this.setLinkEnabled(enabled);
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            });
+        }
+
+        try {
+            await invoke('set_link_enabled', { enabled });
+        } catch (err) {
+            console.error('Error setting Link enabled:', err);
+            throw err;
+        }
+    },
+
+    async startLinkTransport() {
+        if (!tauriReady) {
+            return new Promise((resolve, reject) => {
+                whenTauriReady(async () => {
+                    try {
+                        await this.startLinkTransport();
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            });
+        }
+
+        try {
+            await invoke('start_link_transport');
+        } catch (err) {
+            console.error('Error starting Link transport:', err);
+            throw err;
+        }
+    },
+
+    async stopLinkTransport() {
+        if (!tauriReady) {
+            return new Promise((resolve, reject) => {
+                whenTauriReady(async () => {
+                    try {
+                        await this.stopLinkTransport();
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            });
+        }
+
+        try {
+            await invoke('stop_link_transport');
+        } catch (err) {
+            console.error('Error stopping Link transport:', err);
+            throw err;
+        }
+    },
+
+    async setLinkQuantum(beats) {
+        if (!tauriReady) {
+            return new Promise((resolve, reject) => {
+                whenTauriReady(async () => {
+                    try {
+                        await this.setLinkQuantum(beats);
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            });
+        }
+
+        try {
+            // Ensure beats is in a reasonable range (1-16)
+            const clampedBeats = Math.max(1, Math.min(16, beats));
+            await invoke('set_link_quantum', { beats: clampedBeats });
+        } catch (err) {
+            console.error('Error setting Link quantum:', err);
             throw err;
         }
     }

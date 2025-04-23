@@ -3,6 +3,7 @@ import { switchView, initializeViews } from './views.js';
 import { setupEventListeners } from './events.js';
 import { appState, initializeState } from './state.js';
 import { initializeDebug, logAppState } from './debug.js';
+import { initializeLinkUI } from './link.js';
 
 // Import CSS as string to avoid MIME type issues
 const notificationsStyle = document.createElement('style');
@@ -73,6 +74,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('Error initializing application:', error);
         switchView('welcome');
+    }
+
+    try {
+        await initializeLinkUI();
+    } catch (error) {
+        console.error('Error initializing Link UI:', error);
     }
 
     // Add a global error handler

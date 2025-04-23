@@ -3,6 +3,7 @@ import {appState, updateSnapDescription} from './state.js';
 import {switchView} from './views.js';
 import {addParameter} from './config.js';
 import {api, eventBus, fileDialogs} from './tauri-api.js';
+import { shouldQuantizeSnapChange, startQuantizedMorph } from './link.js';
 
 // Global state for copy/paste
 let copiedSnap = null;
@@ -417,6 +418,21 @@ async function generateAIValues() {
         console.log('AI value generation requested');
     } catch (error) {
         console.error('Error generating AI values:', error);
+    }
+}
+
+async function startMorph(fromSnap, toSnap, durationBars, curveType) {
+    try {
+        if (shouldQuantizeSnapChange()) {
+            // Use Link-quantized morphing
+            await startQuantizedMorph(fromSnap, toSnap, durationBars, curveType);
+        } else {
+            // Use regular morphing
+            await api.startMorph(fromSnap, toSnap, durationBars, curveType);
+        }
+        console.log('Morph started');
+    } catch (error) {
+        console.error('Error starting morph:', error);
     }
 }
 

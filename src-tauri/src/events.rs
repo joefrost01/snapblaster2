@@ -76,6 +76,7 @@ pub enum Event {
         to_snap: usize,
         duration_bars: u8,
         curve_type: MorphCurve,
+        quantize: bool,
     },
     MorphProgressed {
         progress: f64,
@@ -89,6 +90,24 @@ pub enum Event {
 
     // System events
     Shutdown,
+
+    // Link events
+    LinkStatusChanged {
+        connected: bool,
+        peers: usize,
+    },
+    LinkTempoChanged {
+        tempo: f64,
+    },
+    LinkTransportChanged {
+        playing: bool,
+    },
+    RequestLinkStatus,
+    RequestLinkTempo,
+    RequestNextBarTime,
+    NextBarTime {
+        wait_time_ms: u64,
+    },
 }
 
 /// Event statistics for monitoring
@@ -226,6 +245,13 @@ impl Event {
             Event::ProjectLoaded => "ProjectLoaded",
             Event::ProjectSaved => "ProjectSaved",
             Event::Shutdown => "Shutdown",
+            Event::LinkStatusChanged { .. } => "LinkStatusChanged",
+            Event::LinkTempoChanged { .. } => "LinkTempoChanged",
+            Event::LinkTransportChanged { .. } => "LinkTransportChanged",
+            Event::RequestLinkStatus => "RequestLinkStatus",
+            Event::RequestLinkTempo => "RequestLinkTempo",
+            Event::RequestNextBarTime => "RequestNextBarTime",
+            Event::NextBarTime { .. } => "NextBarTime",
         }
     }
 
@@ -289,6 +315,7 @@ impl fmt::Display for Event {
                 to_snap,
                 duration_bars,
                 curve_type,
+                quantize: bool,
             } => write!(
                 f,
                 "MorphInitiated: from={}, to={}, duration={}bars, curve={:?}",
@@ -301,6 +328,21 @@ impl fmt::Display for Event {
             Event::ProjectLoaded => write!(f, "ProjectLoaded"),
             Event::ProjectSaved => write!(f, "ProjectSaved"),
             Event::Shutdown => write!(f, "Shutdown"),
+            Event::LinkStatusChanged { connected, peers } => {
+                write!(f, "LinkStatusChanged: connected={}, peers={}", connected, peers)
+            },
+            Event::LinkTempoChanged { tempo } => {
+                write!(f, "LinkTempoChanged: tempo={:.1}", tempo)
+            },
+            Event::LinkTransportChanged { playing } => {
+                write!(f, "LinkTransportChanged: playing={}", playing)
+            },
+            Event::RequestLinkStatus => write!(f, "RequestLinkStatus"),
+            Event::RequestLinkTempo => write!(f, "RequestLinkTempo"),
+            Event::RequestNextBarTime => write!(f, "RequestNextBarTime"),
+            Event::NextBarTime { wait_time_ms } => {
+                write!(f, "NextBarTime: wait_time_ms={}", wait_time_ms)
+            },
         }
     }
 }

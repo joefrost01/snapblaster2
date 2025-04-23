@@ -403,6 +403,43 @@ impl SnapAIService {
 }
 ```
 
+## Ableton Link Integration
+
+Snap-Blaster now includes Ableton Link integration, allowing you to synchronize tempo and timing with other Link-enabled applications like Ableton Live, Bitwig, Reason, and many others.
+
+### Link Features
+
+- **Tempo Synchronization**: Snap-Blaster will automatically sync its tempo with other Link-enabled applications on your network.
+- **Peer Discovery**: Snap-Blaster displays the number of Link peers it's connected to in the UI.
+- **Quantized Operations**: Snap changes and morphing operations can be quantized to bar boundaries, ensuring all transitions happen in time with the music.
+- **Transport Synchronization**: Play/stop state is synchronized across apps.
+
+### Using Link
+
+1. **Enabling Link**: Link is enabled by default in Snap-Blaster. You can toggle it by clicking on the Link status indicator in the header.
+
+2. **Setting Tempo**: Change the BPM value in the header to set a new tempo. If connected to other Link applications, all apps will sync to this tempo.
+
+3. **Quantized Morphing**: When Link is connected, morphing between snaps will automatically quantize to the next bar boundary, ensuring seamless transitions in your performance.
+
+4. **Link Status**: The Link status indicator shows:
+  - Green: Connected to one or more peers
+  - Gray: Not connected to any peers
+  - Pulsing: Transport is running
+
+### Technical Implementation
+
+Snap-Blaster uses the [rusty_link](https://crates.io/crates/rusty_link) crate, which provides Rust bindings for the official Ableton Link C++ library. The integration follows the event-driven architecture of the application, with Link events propagating through the central event bus.
+
+Key components:
+
+- `LinkSynchronizer`: Core Rust component that interfaces with the Link library
+- `BeatOccurred` and `BarOccurred` events: Fired on musical time boundaries
+- `LinkStatusChanged` events: Broadcast when connection status changes
+- Quantized operations: Snap changes and morphs align with bar boundaries
+
+This implementation ensures that Snap-Blaster integrates seamlessly with your existing audio workflow, maintaining perfect synchronization with your DAW.
+
 ## System Architecture Components
 
 | Component | Primary Responsibility | Key Dependencies |

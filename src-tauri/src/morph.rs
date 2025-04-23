@@ -1,9 +1,10 @@
+// src-tauri/src/morph.rs
 use crate::events::{Event, EventBus, MorphCurve};
 use crate::model::{ActiveMorph, SharedState};
 use std::f64::consts::PI;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 use tokio::time::{self, Instant};
 use tracing::{debug, error, info, warn};
@@ -43,8 +44,10 @@ impl MorphEngine {
                         to_snap,
                         duration_bars,
                         curve_type,
+                        quantize,
                     } => {
-                        info!("Starting morph: {} -> {}, duration: {}bars", from_snap, to_snap, duration_bars);
+                        info!("Starting morph: {} -> {}, duration: {}bars, quantize: {}", 
+                              from_snap, to_snap, duration_bars, quantize);
 
                         // Cancel any existing morph task
                         if let Some(task) = morph_task.take() {
@@ -65,9 +68,12 @@ impl MorphEngine {
                         let event_bus = self.event_bus.clone();
                         let bank_id = state_guard.current_bank;
 
-                        // Start a new morph task
+                        // Start a new morph task - pass the quantize flag directly
                         morph_task = Some(tokio::spawn(async move {
-                            Self::run_morph(state, event_bus, bank_id, from_snap, to_snap, duration_bars, curve_type).await;
+                            Self::run_morph(
+                                state, event_bus, bank_id,
+                                from_snap, to_snap, duration_bars, curve_type, quantize
+                            ).await;
                         }));
                     },
                     Event::Shutdown => {
@@ -99,6 +105,7 @@ impl MorphEngine {
         to_snap: usize,
         duration_bars: u8,
         curve_type: MorphCurve,
+        quantize: bool,
     ) {
         // Get the values for both snaps
         let (from_values, to_values, param_count) = {
@@ -129,10 +136,57 @@ impl MorphEngine {
             state_guard.active_morph = Some(active_morph);
         }
 
-        // Calculate total duration based on BPM
-        // For simplicity, we'll use a 120 BPM default tempo if not synced
-        // In a real implementation, we would get this from Link
-        let bpm = 120.0;
+        // If quantization is requested, get the link state and potentially wait
+        if quantize {
+            // First check if Link is connected to any peers by requesting status
+            let mut status_receiver = event_bus.subscribe();
+            let _ = event_bus.publish(Event::RequestLinkStatus);
+
+            let mut should_quantize = false;
+            let mut wait_ms = 0u64;
+
+            // Wait up to 200ms for a response
+            let timeout = time::Duration::from_millis(200);
+            if let Ok(Ok(event)) = time::timeout(timeout, status_receiver.recv()).await {
+                if let Event::LinkStatusChanged { connected, .. } = event {
+                    should_quantize = connected;
+
+                    // If connected, request the next bar time
+                    if connected {
+                        let _ = event_bus.publish(Event::RequestNextBarTime);
+
+                        // Wait for response with timeout
+                        if let Ok(Ok(time_event)) = time::timeout(timeout, status_receiver.recv()).await {
+                            if let Event::NextBarTime { wait_time_ms } = time_event {
+                                wait_ms = wait_time_ms;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If we should quantize and have a wait time, sleep until the next bar
+            if should_quantize && wait_ms > 0 {
+                info!("Quantizing morph to next bar boundary in {} ms", wait_ms);
+                tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+            }
+        }
+
+        // Get the current tempo (default or from Link)
+        let mut tempo_receiver = event_bus.subscribe();
+        let _ = event_bus.publish(Event::RequestLinkTempo);
+
+        // Default tempo
+        let mut bpm = 120.0;
+
+        // Wait up to 200ms for a tempo response
+        let timeout = time::Duration::from_millis(200);
+        if let Ok(Ok(event)) = time::timeout(timeout, tempo_receiver.recv()).await {
+            if let Event::LinkTempoChanged { tempo } = event {
+                bpm = tempo;
+            }
+        }
+
         let beats_per_second = bpm / 60.0;
         let bars = duration_bars as f64;
         let beats_per_bar = 4.0; // Assuming 4/4 time
@@ -207,7 +261,6 @@ impl MorphEngine {
         }
     }
 
-    /// Complete a morph and finalize to the target values
     /// Complete a morph and finalize to the target values
     async fn complete_morph(state: &SharedState, event_bus: &EventBus, final_values: &[u8]) {
         // First, extract what we need from the active morph
