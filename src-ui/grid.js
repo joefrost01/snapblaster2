@@ -20,11 +20,11 @@ export function createGrid() {
 
             // First row is for modifiers
             if (row === 0) {
-                pad.classList.add('modifier');
+                pad.classList.add('modifier'); // RED for modifiers (top row)
 
                 // Add visual indicator for current bank
                 if (col === appState.currentBank) {
-                    pad.classList.add('active-bank');
+                    pad.classList.add('active-bank'); // RED with border for active bank
                 }
 
                 // Add click handler for bank selection
@@ -56,15 +56,15 @@ export function createGrid() {
 
                 // Check if a snap exists at this position
                 const hasSnap = snapIndex < bank.snaps.length &&
-                              bank.snaps[snapIndex] &&
-                              bank.snaps[snapIndex].name !== '';
+                    bank.snaps[snapIndex] &&
+                    bank.snaps[snapIndex].name !== '';
 
                 if (hasSnap && snapIndex === appState.currentSnap) {
-                    pad.classList.add('active');
+                    pad.classList.add('active');  // GREEN for selected snap
                 } else if (hasSnap) {
-                    pad.classList.add('has-snap');
+                    pad.classList.add('has-snap'); // YELLOW for available snaps
                 } else {
-                    pad.classList.add('empty');
+                    pad.classList.add('empty');  // OFF/dim for empty slots
                 }
 
                 // Add click handler for all non-modifier pads
@@ -109,17 +109,17 @@ export function createGrid() {
         style.id = 'grid-styles';
         style.textContent = `
             .grid-pad.active-bank {
-                background-color: #3b82f6;
-                border: 2px solid #2563eb;
+                background-color: #ef4444; /* RED for modifiers (consistent with hardware) */
+                border: 2px solid #b91c1c;
             }
             
             .grid-pad.has-snap {
-                background-color: #4b5563;
+                background-color: #eab308; /* YELLOW for available snaps */
             }
             
             .grid-pad.active {
-                background-color: #f97316 !important;
-                border: 2px solid #ea580c;
+                background-color: #22c55e !important; /* GREEN for selected snap */
+                border: 2px solid #16a34a;
             }
             
             .grid-pad.empty:hover {

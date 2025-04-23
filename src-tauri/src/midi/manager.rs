@@ -233,7 +233,7 @@ impl MidiManager {
 
         Ok(())
     }
-
+    
     /// Redraw all LEDs based on current state
     pub fn update_controller_leds(&self) -> Result<(), Box<dyn Error>> {
         if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
@@ -246,14 +246,14 @@ impl MidiManager {
                 // Top row: Bank indicators (0-7)
                 for i in 0..8 {
                     let color = if i == st.current_bank {
-                        // Current bank: bright blue
-                        Rgb::new(0, 128, 255)
+                        // Current bank: RED (matches UI)
+                        Rgb::red()  // RED for modifiers/banks
                     } else if i < st.project.banks.len() {
-                        // Available bank: medium blue
-                        Rgb::new(0, 64, 128)
+                        // Available bank: dimmed RED
+                        Rgb::new(128, 0, 0)  // Dimmed RED for available banks
                     } else {
-                        // Unavailable bank: dim blue
-                        Rgb::new(0, 32, 64)
+                        // Unavailable bank: very dim RED
+                        Rgb::new(64, 0, 0)  // Very dim RED for unavailable banks
                     };
 
                     ctrl.set_led(i as u8, color);
@@ -270,14 +270,14 @@ impl MidiManager {
                         let is_current = idx == st.current_snap;
 
                         let color = if is_current {
-                            // Current snap: orange
-                            Rgb::orange()
+                            // Current snap: GREEN (selected)
+                            Rgb::green()  // GREEN for selected snap
                         } else if has_snap {
-                            // Available snap: gray
-                            Rgb::gray()
+                            // Available snap: YELLOW
+                            Rgb::yellow()  // YELLOW for available snaps
                         } else {
                             // Empty slot: very dim
-                            Rgb::new(16, 16, 16)
+                            Rgb::new(16, 16, 16)  // Very dim/off for empty slots
                         };
 
                         ctrl.set_led(pad, color);

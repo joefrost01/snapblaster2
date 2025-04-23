@@ -236,51 +236,53 @@ impl LaunchpadX {
             return 0;
         }
 
-        // Full white
-        if color.r > 200 && color.g > 200 && color.b > 200 {
-            return 3;
+        // OFF/Very dim (empty slots)
+        if color.r <= 20 && color.g <= 20 && color.b <= 20 {
+            return 0; // Dim white
         }
 
-        // Primary and mixed colors - weighted simplification
+        // GREEN (selected snap) - prioritize this
+        if color.g > 200 && color.r < 100 && color.b < 100 {
+            return 21; // Bright green
+        }
+
+        // RED (modifiers/top row)
+        if color.r > 200 && color.g < 100 && color.b < 100 {
+            return 5; // Bright red
+        }
+
+        // YELLOW (available snaps)
+        if color.r > 200 && color.g > 200 && color.b < 100 {
+            return 13; // Bright yellow
+        }
+
+        // Full white as fallback
+        if color.r > 200 && color.g > 200 && color.b > 200 {
+            return 0;
+        }
+
+        // If we get here, do some simple logic based on the dominant color
         let r_weight = (color.r as f32 / 255.0) * 3.0;
         let g_weight = (color.g as f32 / 255.0) * 3.0;
         let b_weight = (color.b as f32 / 255.0) * 3.0;
 
         // Red range: 5-7
         if r_weight > g_weight && r_weight > b_weight {
-            if g_weight > 1.0 { // Red + Green = Yellow-ish
-                return 13;
-            }
-            if b_weight > 1.0 { // Red + Blue = Purple-ish
-                return 45;
-            }
             return 5 + r_weight as u8; // Pure red
         }
 
         // Green range: 17-19
         if g_weight > r_weight && g_weight > b_weight {
-            if r_weight > 1.0 { // Green + Red = Yellow-ish
-                return 13;
-            }
-            if b_weight > 1.0 { // Green + Blue = Cyan-ish
-                return 37;
-            }
             return 17 + g_weight as u8; // Pure green
         }
 
         // Blue range: 45-47
         if b_weight > r_weight && b_weight > g_weight {
-            if r_weight > 1.0 { // Blue + Red = Purple-ish
-                return 45;
-            }
-            if g_weight > 1.0 { // Blue + Green = Cyan-ish
-                return 37;
-            }
             return 45 + b_weight as u8; // Pure blue
         }
 
         // Fallback - dim white
-        return 1;
+        return 0;
     }
 }
 

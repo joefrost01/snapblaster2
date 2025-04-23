@@ -32,12 +32,12 @@ impl Rgb {
         }
     }
 
-    /// Create a red color
+    /// Create a red color - for modifiers (top row)
     pub fn red() -> Self {
         Self { r: 255, g: 0, b: 0 }
     }
 
-    /// Create a green color
+    /// Create a green color - for selected snap
     pub fn green() -> Self {
         Self { r: 0, g: 255, b: 0 }
     }
@@ -56,7 +56,7 @@ impl Rgb {
         }
     }
 
-    /// Create a yellow color
+    /// Create a yellow color - for available snaps
     pub fn yellow() -> Self {
         Self {
             r: 255,

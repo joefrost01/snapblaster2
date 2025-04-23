@@ -214,12 +214,22 @@ main {
     filter: brightness(1.2);
 }
 
+/* Updated grid pad colors for color consistency */
 .grid-pad.active {
-    background-color: var(--accent);
+    background-color: #22c55e; /* GREEN for selected snap */
 }
 
 .grid-pad.modifier {
-    background-color: #3b82f6;
+    background-color: #ef4444; /* RED for modifiers (top row) */
+}
+
+.grid-pad.has-snap {
+    background-color: #eab308; /* YELLOW for available snaps */
+}
+
+.grid-pad.active-bank {
+    background-color: #ef4444; /* RED for selected bank in modifier row */
+    border: 2px solid #b91c1c;
 }
 
 .project-info {
