@@ -139,6 +139,7 @@ impl LaunchpadX {
 
             // This SysEx command sets Programmer mode
             let sysex = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7];
+            //F0h 00h 20h 29h 02h 0Ch 0Eh <mode> F7h
             conn.send(&sysex)?;
 
             // Add a longer delay to ensure mode changes completely
