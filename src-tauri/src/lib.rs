@@ -10,11 +10,8 @@ pub mod midi {
     pub mod controller;
     pub mod manager;
     pub mod controllers {
-        pub mod apc_mini;
         pub mod generic;
-        pub mod launchpad_mini;
         pub mod launchpad_x;
-        pub mod push_2;
     }
 }
 

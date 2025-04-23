@@ -1,9 +1,6 @@
 use crate::events::{Event, EventBus};
-use crate::midi::controllers::apc_mini::ApcMini;
 use crate::midi::controllers::generic::GenericController;
-use crate::midi::controllers::launchpad_mini::LaunchpadMini;
 use crate::midi::controllers::launchpad_x::LaunchpadX;
-use crate::midi::controllers::push_2::Push2;
 use std::error::Error;
 use tracing::{info, warn};
 
@@ -125,31 +122,10 @@ pub fn create_controller(
     info!("Creating controller: {}", name);
 
     match name {
-        "Launchpad Mini" => match LaunchpadMini::new(event_bus.clone()) {
-            Ok(controller) => Ok(Box::new(controller)),
-            Err(e) => {
-                warn!("Failed to create Launchpad Mini: {}", e);
-                fallback_controller(event_bus)
-            }
-        },
         "Launchpad X" => match LaunchpadX::new(event_bus.clone()) {
             Ok(controller) => Ok(Box::new(controller)),
             Err(e) => {
                 warn!("Failed to create Launchpad X: {}", e);
-                fallback_controller(event_bus)
-            }
-        },
-        "Push 2" => match Push2::new(event_bus.clone()) {
-            Ok(controller) => Ok(Box::new(controller)),
-            Err(e) => {
-                warn!("Failed to create Push 2: {}", e);
-                fallback_controller(event_bus)
-            }
-        },
-        "APC Mini" => match ApcMini::new(event_bus.clone()) {
-            Ok(controller) => Ok(Box::new(controller)),
-            Err(e) => {
-                warn!("Failed to create APC Mini: {}", e);
                 fallback_controller(event_bus)
             }
         },
