@@ -95,7 +95,20 @@ impl MidiManager {
                             let note = msg[1];
                             let vel = msg[2];
                             debug!("Received note from hardware: note={}, vel={}", note, vel);
-                            let _ = eb.publish(Event::PadPressed { pad: note, velocity: vel });
+                            if vel > 0 {
+                                // Note On with velocity > 0
+                                let _ = eb.publish(Event::PadPressed { pad: note, velocity: vel });
+                            } else {
+                                // Note On with velocity = 0 is actually a Note Off
+                                let _ = eb.publish(Event::PadReleased { pad: note, velocity: vel });
+                            }
+                        }
+                        // Process explicit note-off messages (0x8n where n is the channel)
+                        else if msg.len() >= 3 && (msg[0] & 0xF0) == 0x80 {
+                            let note = msg[1];
+                            let vel = msg[2];
+                            debug!("Received note-off from hardware: note={}, vel={}", note, vel);
+                            let _ = eb.publish(Event::PadReleased { pad: note, velocity: vel });
                         }
                     },
                     (),
@@ -177,11 +190,20 @@ impl MidiManager {
                 tokio::spawn(async move {
                     info!("Started event handler for PadPressed events");
                     while let Ok(event) = subscriber.recv().await {
-                        if let Event::PadPressed { pad, velocity } = event {
-                            debug!("Received PadPressed event: pad={}, velocity={}", pad, velocity);
-                            if let Err(err) = manager.handle_pad_pressed(pad, velocity).await {
-                                error!("Error handling pad press: {}", err);
+                        match event {
+                            Event::PadPressed { pad, velocity } => {
+                                debug!("Received PadPressed event: pad={}, velocity={}", pad, velocity);
+                                if let Err(err) = manager.handle_pad_pressed(pad, velocity).await {
+                                    error!("Error handling pad press: {}", err);
+                                }
                             }
+                            Event::PadReleased { pad, velocity } => {
+                                debug!("Received PadReleased event: pad={}, velocity={}", pad, velocity);
+                                if let Err(err) = manager.handle_pad_released(pad, velocity).await {
+                                    error!("Error handling pad release: {}", err);
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 });
@@ -237,7 +259,7 @@ impl MidiManager {
 
         Ok(())
     }
-    
+
     /// Redraw all LEDs based on current state
     pub fn update_controller_leds(&self) -> Result<(), Box<dyn Error>> {
         if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
@@ -336,90 +358,59 @@ impl MidiManager {
 
         Ok(())
     }
-    
+
     /// Handle a pad press event from the hardware controller
     pub async fn handle_pad_pressed(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
         info!("Handling pad press: pad={}, velocity={}", pad, velocity);
 
         if let Some(ref state) = self.state {
-            // Handle note-off events for modifiers (top row pads 0-4)
-            if pad < 5 && velocity == 0 {
+            // Check if this is a modifier pad press (top row, pads 0-4)
+            if pad < 5 && velocity > 0 {
+                // Handle modifier press - set active modifier
                 let mut state_guard = state.write().unwrap();
 
-                // Check if this is the currently active modifier
-                if state_guard.active_modifier == Some(pad) {
-                    // Clear the active modifier
-                    state_guard.active_modifier = None;
-                    drop(state_guard); // Release the lock before updating LEDs
+                // Set the morph duration based on the pad
+                let duration_bars = match pad {
+                    0 => 1,  // 1 bar
+                    1 => 2,  // 2 bars
+                    2 => 4,  // 4 bars
+                    3 => 8,  // 8 bars
+                    4 => 16, // 16 bars
+                    _ => 4,  // Default: 4 bars
+                };
 
-                    // Reset the LED to standard color (red)
-                    if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
-                        ctrl.set_led(pad, Rgb::red());
-                        ctrl.refresh_state();
-                    }
+                // Store the active modifier and duration
+                state_guard.active_modifier = Some(pad);
+                state_guard.morph_duration = duration_bars;
+                drop(state_guard); // Release the lock before updating LEDs
 
-                    return Ok(());
+                // Color the modifier pad green to indicate it's active
+                if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
+                    ctrl.set_led(pad, Rgb::green());
+                    ctrl.refresh_state();
                 }
 
                 return Ok(());
             }
 
-            // Check if this is a modifier pad press (top row, pads 0-4)
-            let is_morph_modifier = pad < 5 && velocity > 0;
+            // Check bank selection (pads 5-7)
+            if pad >= 5 && pad < 8 && velocity > 0 {
+                let mut state_guard = state.write().unwrap();
 
-            // Get the current active modifier if any
-            let active_modifier = {
-                let state_guard = state.read().unwrap();
-                state_guard.active_modifier
-            };
+                if pad < state_guard.project.banks.len() as u8 {
+                    // Change bank
+                    state_guard.current_bank = pad as usize;
+                    drop(state_guard);
 
-            // Handle top row pads for bank selection or morph modifiers
-            if pad < 8 && velocity > 0 {
-                if is_morph_modifier {
-                    // Handle morph modifier press - set active modifier
-                    let mut state_guard = state.write().unwrap();
+                    // Publish event
+                    let _ = self.event_bus.publish(Event::BankSelected {
+                        bank_id: pad as usize
+                    });
 
-                    // Set the morph duration based on the pad
-                    let duration_bars = match pad {
-                        0 => 1,  // 1 bar
-                        1 => 2,  // 2 bars
-                        2 => 4,  // 4 bars
-                        3 => 8,  // 8 bars
-                        4 => 16, // 16 bars
-                        _ => 4,  // Default: 4 bars
-                    };
-
-                    // Store the active modifier and duration
-                    state_guard.active_modifier = Some(pad);
-                    state_guard.morph_duration = duration_bars;
-                    drop(state_guard); // Release the lock before updating LEDs
-
-                    // Color the modifier pad green to indicate it's active
-                    if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
-                        ctrl.set_led(pad, Rgb::green());
-                        ctrl.refresh_state();
-                    }
-
-                    return Ok(());
-                } else {
-                    // Regular bank selection (pads 5-7 or when no modifier is active)
-                    let mut state_guard = state.write().unwrap();
-
-                    if pad < state_guard.project.banks.len() as u8 {
-                        // Change bank
-                        state_guard.current_bank = pad as usize;
-                        drop(state_guard);
-
-                        // Publish event
-                        let _ = self.event_bus.publish(Event::BankSelected {
-                            bank_id: pad as usize
-                        });
-
-                        // Update controller display
-                        self.update_controller_leds()?;
-                    }
-                    return Ok(());
+                    // Update controller display
+                    self.update_controller_leds()?;
                 }
+                return Ok(());
             }
 
             // Non-top-row pads are for snap selection or morph targets
@@ -427,6 +418,11 @@ impl MidiManager {
             let bank_id;
 
             // Check if this is a regular snap selection or morph target selection
+            let active_modifier = {
+                let guard = state.read().unwrap();
+                guard.active_modifier
+            };
+
             if let Some(modifier_pad) = active_modifier {
                 // This is a morph target selection
                 info!("Morph target selected: pad={}, snap_id={}", pad, snap_id);
@@ -459,18 +455,6 @@ impl MidiManager {
                     if from_snap == snap_id {
                         return Ok(());
                     }
-                }
-
-                // Clear the modifier state
-                {
-                    let mut state_guard = state.write().unwrap();
-                    state_guard.active_modifier = None;
-                }
-
-                // Reset the modifier LED back to red
-                if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
-                    ctrl.set_led(modifier_pad, Rgb::red());
-                    ctrl.refresh_state();
                 }
 
                 // Start the morph (use Link-quantized morphing)
@@ -542,6 +526,33 @@ impl MidiManager {
 
                 // Update the controller LEDs
                 self.update_controller_leds()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle a pad release event from the hardware controller
+    pub async fn handle_pad_released(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
+        info!("Handling pad release: pad={}, velocity={}", pad, velocity);
+
+        if let Some(ref state) = self.state {
+            // Only handle releases for the modifier pads (0-4)
+            if pad < 5 {
+                let mut state_guard = state.write().unwrap();
+
+                // Check if this was the active modifier
+                if state_guard.active_modifier == Some(pad) {
+                    // Clear the active modifier
+                    state_guard.active_modifier = None;
+                    drop(state_guard); // Release the lock
+
+                    // Update LED to normal red state
+                    if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
+                        ctrl.set_led(pad, Rgb::red());
+                        ctrl.refresh_state();
+                    }
+                }
             }
         }
 

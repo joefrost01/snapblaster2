@@ -271,6 +271,7 @@ impl Event {
         matches!(
             self,
             Event::PadPressed { .. } | 
+            Event::PadReleased { .. } |
             Event::ParameterEdited { .. } | 
             Event::CCValueChanged { .. } |
             Event::Shutdown

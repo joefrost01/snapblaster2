@@ -86,10 +86,13 @@ impl LaunchpadX {
                                 let vel = u7_to_u8(velocity);
                                 debug!("Received NoteOn: note={:?}, pad={}, velocity={}", note, pad, vel);
 
-                                // Only process if velocity > 0 (ignore note off events)
+                                // Only process if velocity > 0 (note on events)
                                 if vel > 0 {
                                     // Publish event
                                     let _ = event_bus.publish(Event::PadPressed { pad, velocity: vel });
+                                } else {
+                                    // Note On with velocity 0 is actually a Note Off in MIDI
+                                    let _ = event_bus.publish(Event::PadReleased { pad, velocity: vel });
                                 }
                             } else {
                                 debug!("Note {:?} mapped to no valid pad", note);
@@ -104,11 +107,8 @@ impl LaunchpadX {
                                 let vel = u7_to_u8(velocity);
                                 debug!("Received NoteOff: note={:?}, pad={}, velocity={}", note, pad, vel);
 
-                                // Only process if velocity > 0 (ignore note off events)
-                                if vel == 0 {
-                                    // Publish event
-                                    let _ = event_bus.publish(Event::PadReleased { pad, velocity: vel });
-                                }
+                                // Publish note off event
+                                let _ = event_bus.publish(Event::PadReleased { pad, velocity: vel });
                             } else {
                                 debug!("Note {:?} mapped to no valid pad", note);
                             }

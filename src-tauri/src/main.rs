@@ -624,21 +624,35 @@ async fn main() {
         let midi_manager_clone = midi_manager.clone();
         let pad_event_bus = event_bus.clone();
 
-        // Existing pad press handler
+        // Pad events handler
         tokio::spawn(async move {
             let mut rx = pad_event_bus.subscribe();
 
             while let Ok(event) = rx.recv().await {
-                if let Event::PadPressed { pad, velocity } = event {
-                    debug!(
-                        "Received PadPressed event in main handler: pad={}, velocity={}",
-                        pad, velocity
-                    );
-                    if let Err(e) = midi_manager_clone.handle_pad_pressed(pad, velocity).await {
-                        error!("Error handling pad press: {}", e);
-                    } else {
-                        debug!("Successfully handled pad press");
-                    }
+                match event {
+                    Event::PadPressed { pad, velocity } => {
+                        debug!(
+                            "Received PadPressed event in main handler: pad={}, velocity={}",
+                            pad, velocity
+                        );
+                        if let Err(e) = midi_manager_clone.handle_pad_pressed(pad, velocity).await {
+                            error!("Error handling pad press: {}", e);
+                        } else {
+                            debug!("Successfully handled pad press");
+                        }
+                    },
+                    Event::PadReleased { pad, velocity } => {
+                        debug!(
+                            "Received PadReleased event in main handler: pad={}, velocity={}",
+                            pad, velocity
+                        );
+                        if let Err(e) = midi_manager_clone.handle_pad_released(pad, velocity).await {
+                            error!("Error handling pad release: {}", e);
+                        } else {
+                            debug!("Successfully handled pad release");
+                        }
+                    },
+                    _ => {}
                 }
             }
         });
