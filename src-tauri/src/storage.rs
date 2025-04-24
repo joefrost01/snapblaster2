@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
+use tracing::debug;
 
 /// ProjectStorage handles saving and loading project files
 pub struct ProjectStorage {
@@ -25,8 +26,8 @@ impl ProjectStorage {
         let project = state_guard.project.clone();
 
         // Ensure we're getting the parameters and all data from the shared state
-        println!("Saving project with {} parameters", project.parameters.len());
-        println!("Current project state: {:?}", project);
+        debug!("Saving project with {} parameters", project.parameters.len());
+        debug!("Current project state: {:?}", project);
 
         // Create the file
         let file = File::create(path)?;
@@ -38,7 +39,7 @@ impl ProjectStorage {
         // Publish event that project was saved
         let _ = self.event_bus.publish(Event::ProjectSaved);
 
-        println!("Project saved successfully to {:?}", path);
+        debug!("Project saved successfully to {:?}", path);
         Ok(())
     }
 

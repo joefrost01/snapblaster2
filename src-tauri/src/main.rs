@@ -36,7 +36,7 @@ async fn debug_state(state: State<'_, AppState>) -> Result<String, String> {
         state_guard.project.controller
     );
 
-    println!("Debug state: {}", debug_info);
+    debug!("Debug state: {}", debug_info);
 
     Ok(debug_info)
 }
@@ -69,14 +69,14 @@ async fn set_controller(name: String, state: State<'_, AppState>) -> Result<(), 
 #[tauri::command]
 async fn get_project(state: State<'_, AppState>) -> Result<String, String> {
     let state_guard = state.shared_state.read().unwrap();
-    println!(
+    debug!(
         "Getting project state: {} parameters",
         state_guard.project.parameters.len()
     );
 
     // Print debug info about the current project
     for (i, param) in state_guard.project.parameters.iter().enumerate() {
-        println!("Parameter {}: {} (CC: {})", i, param.name, param.cc);
+        debug!("Parameter {}: {} (CC: {})", i, param.name, param.cc);
     }
 
     serde_json::to_string(&state_guard.project).map_err(|e| e.to_string())
@@ -87,7 +87,7 @@ async fn get_project(state: State<'_, AppState>) -> Result<String, String> {
 async fn save_project(path: String, state: State<'_, AppState>) -> Result<(), String> {
     // Get the shared state directly to ensure we're saving the current state
     let state_guard = state.shared_state.read().unwrap();
-    println!(
+    debug!(
         "Before save - Project has {} parameters",
         state_guard.project.parameters.len()
     );
@@ -99,7 +99,7 @@ async fn save_project(path: String, state: State<'_, AppState>) -> Result<(), St
 
     // Double check the parameters are being saved
     if result.is_ok() {
-        println!(
+        debug!(
             "Project saved. Parameters in state: {}",
             state_guard.project.parameters.len()
         );
@@ -194,7 +194,7 @@ async fn select_snap(
         // Send all parameter values via MIDI
         if let Err(e) = midi_manager.send_snap_values(&params_to_send) {
             // Log error but continue - MIDI failure shouldn't stop the snap selection
-            eprintln!("Failed to send snap values via MIDI: {}", e);
+            error!("Failed to send snap values via MIDI: {}", e);
         }
     }
 
@@ -251,7 +251,7 @@ async fn edit_parameter(
     if let Some(midi_manager) = &state.midi_manager {
         if let Err(e) = midi_manager.send_cc(0, cc, value) {
             // Log error but continue - MIDI failure shouldn't stop the parameter edit
-            eprintln!("Failed to send parameter CC via MIDI: {}", e);
+            error!("Failed to send parameter CC via MIDI: {}", e);
         }
     }
 
@@ -285,7 +285,7 @@ async fn send_wiggle(cc: u8, values: Vec<u8>, state: State<'_, AppState>) -> Res
         // Send each value with a small delay between
         for value in values {
             if let Err(e) = midi_manager.send_cc(0, cc, value) {
-                eprintln!("Error sending wiggle value: {}", e);
+                error!("Error sending wiggle value: {}", e);
                 // Continue anyway
             }
 
@@ -366,7 +366,7 @@ async fn add_parameter(
         }
     }
 
-    println!(
+    debug!(
         "Parameter added: {} (CC: {}), Total parameters: {}",
         name,
         cc,
@@ -396,7 +396,7 @@ async fn update_parameter(
     param.description = description.clone();
     param.cc = cc;
 
-    println!(
+    debug!(
         "Parameter updated: ID {}, name '{}', CC {}",
         param_id, name, cc
     );
@@ -658,7 +658,7 @@ async fn main() {
                     | Event::BankSelected { .. } => {
                         // No need for Option pattern - it's an Arc directly
                         if let Err(e) = midi_manager_for_events.update_controller_leds() {
-                            eprintln!("Failed to update controller LEDs after state change: {}", e);
+                            error!("Failed to update controller LEDs after state change: {}", e);
                         }
                     }
                     _ => {}

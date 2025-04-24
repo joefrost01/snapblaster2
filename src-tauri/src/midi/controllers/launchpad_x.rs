@@ -95,11 +95,31 @@ impl LaunchpadX {
                                 debug!("Note {:?} mapped to no valid pad", note);
                             }
                         },
+                        MidiMessage::NoteOff(_, note, velocity) => {
+                            // Convert to pad index
+                            let note_num = u8::from(note);
+
+                            // Use the custom note-to-pad mapping
+                            if let Some(pad) = note_to_pad_index(note_num) {
+                                let vel = u7_to_u8(velocity);
+                                debug!("Received NoteOff: note={:?}, pad={}, velocity={}", note, pad, vel);
+
+                                // Only process if velocity > 0 (ignore note off events)
+                                if vel == 0 {
+                                    // Publish event
+                                    let _ = event_bus.publish(Event::PadReleased { pad, velocity: vel });
+                                }
+                            } else {
+                                debug!("Note {:?} mapped to no valid pad", note);
+                            }
+                        },
                         MidiMessage::ControlChange(_, cc, value) => {
                             // Handle control change messages if needed
                             debug!("Received CC: cc={:?}, value={:?}", cc, value);
                         },
-                        _ => {} // Ignore other message types like aftertouch
+                        _ => {
+                            //debug!("Received other MIDI message: {:?}", midi_msg);
+                        } // Ignore other message types like aftertouch
                     }
                 }
             },
@@ -289,7 +309,7 @@ impl LaunchpadX {
 impl MidiGridController for LaunchpadX {
     fn handle_note_input(&mut self, note: u8, velocity: u8) {
         // Only process note-on events (velocity > 0)
-        if velocity > 0 {
+        if velocity >= 0 {
             if let Some(pad) = note_to_pad_index(note) {
                 debug!("Received note: {}, mapped to pad: {}", note, pad);
 
@@ -301,6 +321,8 @@ impl MidiGridController for LaunchpadX {
             } else {
                 debug!("Note {} does not map to a valid pad", note);
             }
+        } else {
+            debug!("Received note {}, velocity {}", note, 0);
         }
     }
 

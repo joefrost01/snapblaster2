@@ -27,6 +27,10 @@ pub enum Event {
         pad: u8,
         velocity: u8,
     },
+    PadReleased {
+        pad: u8,
+        velocity: u8,
+    },
     CCValueChanged {
         param_id: usize,
         value: u8,
@@ -234,6 +238,7 @@ impl Event {
     pub fn event_type(&self) -> &'static str {
         match self {
             Event::PadPressed { .. } => "PadPressed",
+            Event::PadReleased { .. } => "PadReleased",
             Event::CCValueChanged { .. } => "CCValueChanged",
             Event::BeatOccurred { .. } => "BeatOccurred",
             Event::BarOccurred { .. } => "BarOccurred",
@@ -279,6 +284,9 @@ impl fmt::Display for Event {
         match self {
             Event::PadPressed { pad, velocity } => {
                 write!(f, "PadPressed: pad={}, velocity={}", pad, velocity)
+            }
+            Event::PadReleased { pad, velocity } => {
+                write!(f, "PadReleased: pad={}, velocity={}", pad, velocity)
             }
             Event::CCValueChanged { param_id, value } => {
                 write!(f, "CCValueChanged: param_id={}, value={}", param_id, value)

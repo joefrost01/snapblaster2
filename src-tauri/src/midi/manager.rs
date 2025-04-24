@@ -336,11 +336,7 @@ impl MidiManager {
 
         Ok(())
     }
-
-    /// Handle a pad press event from the hardware controller
-    // src-tauri/src/midi/manager.rs (partial)
-    // Updated handle_pad_pressed method to support morph modifiers
-
+    
     /// Handle a pad press event from the hardware controller
     pub async fn handle_pad_pressed(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
         info!("Handling pad press: pad={}, velocity={}", pad, velocity);
