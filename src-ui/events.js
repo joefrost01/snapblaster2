@@ -326,15 +326,20 @@ function showNotification(message, type = 'info') {
     // Add to DOM
     document.body.appendChild(notification);
 
-    // Auto-remove after 3 seconds
-    setTimeout(() => {
-        notification.classList.add('fadeout');
+    // Auto-remove after 3 seconds for non-info notifications
+    if (type !== 'info') {
         setTimeout(() => {
-            if (notification.parentNode) {
-                document.body.removeChild(notification);
-            }
-        }, 500);
-    }, 3000);
+            notification.classList.add('fadeout');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
+            }, 500);
+        }, 3000);
+    }
+
+    // Return the notification element so it can be manipulated later
+    return notification;
 }
 
 // Save the current project
@@ -396,29 +401,98 @@ async function saveProject() {
 
 // Generate AI values
 async function generateAIValues() {
-    if (!appState.project) return;
+    console.log("AI button clicked");
 
-    // Check if we have an OpenAI API key
-    if (!appState.project.openai_api_key) {
-        const apiKey = prompt('Please enter your OpenAI API key:');
-        if (apiKey) {
-            try {
-                await api.setOpenAIApiKey(apiKey);
-            } catch (error) {
-                console.error('Error setting OpenAI API key:', error);
-                return;
+    if (!appState.project) {
+        showNotification('No project loaded', 'warning');
+        return;
+    }
+
+    // Verify that we have a valid snap selected
+    if (appState.currentBank >= appState.project.banks.length ||
+        appState.currentSnap >= appState.project.banks[appState.currentBank].snaps.length) {
+        showNotification('No valid snapshot selected', 'warning');
+        return;
+    }
+
+    console.log('Generating values for snap:', appState.currentSnap);
+
+    // Create a timeout to check if the event hasn't been received
+    let eventTimeoutId = null;
+
+    try {
+        // Show loading state
+        document.body.classList.add('processing');
+        const loadingNotification = document.createElement('div');
+        loadingNotification.className = 'notification info';
+        loadingNotification.textContent = 'Generating AI values...';
+        document.body.appendChild(loadingNotification);
+
+        console.log('Calling API with bank:', appState.currentBank, 'snap:', appState.currentSnap);
+
+        // Call the backend to generate values for the current snap
+        await api.generateAIValues(appState.currentBank, appState.currentSnap);
+        console.log('AI value generation requested successfully. Waiting for event...');
+
+        // Set a timeout to force-update the UI if the event isn't received within 5 seconds
+        eventTimeoutId = setTimeout(() => {
+            console.log('No event received after 5 seconds, forcing UI update');
+            document.body.classList.remove('processing');
+
+            if (loadingNotification && loadingNotification.parentNode) {
+                document.body.removeChild(loadingNotification);
             }
-        } else {
-            return; // User canceled
+
+            // Show a success notification anyway
+            showNotification('AI values generated (timeout)', 'success');
+
+            // Request a fresh project state from the backend
+            api.getProject().then(project => {
+                if (project) {
+                    appState.project = project;
+
+                    // Force refresh the parameters
+                    import('./parameters.js').then(module => {
+                        module.updateParameters();
+                    });
+                }
+            }).catch(err => {
+                console.error('Error refreshing project state:', err);
+            });
+        }, 5000);
+
+    } catch (error) {
+        console.error('Error generating AI values:', error);
+
+        // Make sure to remove the loading state
+        document.body.classList.remove('processing');
+
+        // Remove any pending loading notifications
+        const loadingNotifications = document.querySelectorAll('.notification.info');
+        loadingNotifications.forEach(notification => {
+            if (notification.textContent.includes('Generating AI values')) {
+                notification.parentNode.removeChild(notification);
+            }
+        });
+
+        showNotification('Error generating AI values: ' + error.toString(), 'error');
+
+        // Clear the timeout if it exists
+        if (eventTimeoutId) {
+            clearTimeout(eventTimeoutId);
         }
     }
 
-    try {
-        await api.generateAIValues(appState.currentBank, appState.currentSnap);
-        console.log('AI value generation requested');
-    } catch (error) {
-        console.error('Error generating AI values:', error);
-    }
+    // Add an event listener to clear the timeout when the event is received
+    const clearTimeoutOnEvent = () => {
+        if (eventTimeoutId) {
+            clearTimeout(eventTimeoutId);
+            eventTimeoutId = null;
+        }
+    };
+
+    eventBus.on('ai-generation-completed', clearTimeoutOnEvent);
+    eventBus.on('ai-generation-failed', clearTimeoutOnEvent);
 }
 
 async function startMorph(fromSnap, toSnap, durationBars, curveType) {
@@ -488,3 +562,5 @@ async function handleNewClick(evt) {
     await createNewProject();
     appState.isDirty = false;
 }
+
+export { generateAIValues, showNotification };

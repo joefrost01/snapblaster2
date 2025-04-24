@@ -118,6 +118,93 @@ async function initializeListeners() {
 
                 // Determine event type
                 switch (eventData.type) {
+                    case 'AIGenerationCompleted':
+                        console.log('AI Generation completed event detected!', eventData);
+
+                        eventBus.emit('ai-generation-completed', {
+                            bankId: eventData.bank_id,
+                            snapId: eventData.snap_id,
+                            values: eventData.values
+                        });
+
+                        // Also try to directly update the UI if event bus fails
+                        try {
+                            document.body.classList.remove('processing');
+
+                            // Remove loading notifications
+                            const loadingNotifications = document.querySelectorAll('.notification.info');
+                            loadingNotifications.forEach(n => {
+                                if (n.textContent.includes('Generating AI values')) {
+                                    n.parentNode.removeChild(n);
+                                }
+                            });
+
+                            // Add success notification
+                            const notification = document.createElement('div');
+                            notification.className = 'notification success';
+                            notification.textContent = 'AI values generated successfully';
+                            document.body.appendChild(notification);
+
+                            setTimeout(() => {
+                                notification.classList.add('fadeout');
+                                setTimeout(() => {
+                                    if (notification.parentNode) {
+                                        document.body.removeChild(notification);
+                                    }
+                                }, 500);
+                            }, 3000);
+
+                            // Try to force update parameters
+                            import('./parameters.js').then(module => {
+                                if (module.updateParameters) {
+                                    module.updateParameters();
+                                }
+                            });
+                        } catch (err) {
+                            console.error('Error in direct UI update:', err);
+                        }
+                        break; // Add missing break statement here
+
+                    case 'AIGenerationFailed':
+                        console.log('AI Generation failed event detected!', eventData);
+
+                        eventBus.emit('ai-generation-failed', {
+                            bankId: eventData.bank_id,
+                            snapId: eventData.snap_id,
+                            error: eventData.error
+                        });
+
+                        // Direct UI update for failure
+                        try {
+                            document.body.classList.remove('processing');
+
+                            // Remove loading notifications
+                            const loadingNotifications = document.querySelectorAll('.notification.info');
+                            loadingNotifications.forEach(n => {
+                                if (n.textContent.includes('Generating AI values')) {
+                                    n.parentNode.removeChild(n);
+                                }
+                            });
+
+                            // Add error notification
+                            const notification = document.createElement('div');
+                            notification.className = 'notification error';
+                            notification.textContent = 'AI generation failed: ' + eventData.error;
+                            document.body.appendChild(notification);
+
+                            setTimeout(() => {
+                                notification.classList.add('fadeout');
+                                setTimeout(() => {
+                                    if (notification.parentNode) {
+                                        document.body.removeChild(notification);
+                                    }
+                                }, 500);
+                            }, 3000);
+                        } catch (err) {
+                            console.error('Error in direct UI update for failure:', err);
+                        }
+                        break;
+
                     case 'PadPressed':
                         eventBus.emit('pad-pressed', {
                             pad: eventData.pad,
@@ -143,14 +230,6 @@ async function initializeListeners() {
                         eventBus.emit('parameter-edited', {
                             paramId: eventData.param_id,
                             value: eventData.value
-                        });
-                        break;
-
-                    case 'AIGenerationCompleted':
-                        eventBus.emit('ai-generation-completed', {
-                            bankId: eventData.bank_id,
-                            snapId: eventData.snap_id,
-                            values: eventData.values
                         });
                         break;
 
@@ -435,6 +514,8 @@ const api = {
 
     // Generate AI values
     async generateAIValues(bankId, snapId) {
+        console.log(`Invoking generate_ai_values with bank ${bankId}, snap ${snapId}`);
+
         if (!tauriReady) {
             return new Promise((resolve, reject) => {
                 whenTauriReady(async () => {
@@ -450,6 +531,7 @@ const api = {
 
         try {
             await invoke('generate_ai_values', { bankId, snapId });
+            console.log(`API: Successfully sent generate_ai_values request for bank ${bankId}, snap ${snapId}`);
         } catch (err) {
             console.error('Error generating AI values:', err);
             throw err;
@@ -484,7 +566,7 @@ const api = {
         if (!tauriReady) {
             return new Promise((resolve, reject) => {
                 whenTauriReady(async () => {
-                    try {
+                    try {console.log("Tauri not ready")
                         await this.setOpenAIApiKey(apiKey);
                         resolve();
                     } catch (err) {
@@ -495,6 +577,7 @@ const api = {
         }
 
         try {
+            console.log("Trying to setup OpenAI API")
             await invoke('set_openai_api_key', { apiKey });
         } catch (err) {
             console.error('Error setting OpenAI API key:', err);
@@ -755,6 +838,29 @@ const api = {
         }
     }
 };
+
+function showNotification(message, type = 'info', autoRemove = true) {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+
+    // Add to DOM
+    document.body.appendChild(notification);
+
+    // Auto-remove after 3 seconds if requested
+    if (autoRemove) {
+        setTimeout(() => {
+            notification.classList.add('fadeout');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
+            }, 500);
+        }, 3000);
+    }
+
+    return notification;
+}
 
 // File dialog functions
 const fileDialogs = {

@@ -122,25 +122,93 @@ function setupEventListeners() {
 
     // Listen for AI generation completion
     eventBus.on('ai-generation-completed', ({ bankId, snapId, values }) => {
-        if (!appState.project) return;
+        console.log('Received AI generation completed event:', { bankId, snapId, valuesLength: values.length });
 
-        // Update the snap values
-        const snap = appState.project.banks[bankId].snaps[snapId];
-        snap.values = values;
-
-        // If this is the current snap, update the UI
-        if (bankId === appState.currentBank && snapId === appState.currentSnap) {
-            import('./parameters.js').then(module => {
-                module.updateParameters();
-            });
+        if (!appState.project) {
+            console.error('No project in state to update');
+            return;
         }
 
-        // Show notification
-        showNotification('AI values generated successfully');
+        // Remove any loading state
+        document.body.classList.remove('processing');
+
+        // Remove any pending loading notifications
+        const loadingNotifications = document.querySelectorAll('.notification.info');
+        loadingNotifications.forEach(notification => {
+            if (notification.textContent.includes('Generating AI values')) {
+                notification.classList.add('fadeout');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        document.body.removeChild(notification);
+                    }
+                }, 500);
+            }
+        });
+
+        try {
+            // Update the snap values
+            const snap = appState.project.banks[bankId].snaps[snapId];
+            console.log('Updating snap values, old length:', snap.values.length, 'new length:', values.length);
+            snap.values = values;
+
+            // If this is the current snap, update the UI
+            if (bankId === appState.currentBank && snapId === appState.currentSnap) {
+                console.log('Updating UI for current snap');
+                import('./parameters.js').then(module => {
+                    module.updateParameters();
+                });
+            }
+
+            // Show notification
+            const notificationEl = document.createElement('div');
+            notificationEl.className = 'notification success';
+            notificationEl.textContent = 'AI values generated successfully';
+            document.body.appendChild(notificationEl);
+
+            setTimeout(() => {
+                notificationEl.classList.add('fadeout');
+                setTimeout(() => {
+                    if (notificationEl.parentNode) {
+                        document.body.removeChild(notificationEl);
+                    }
+                }, 500);
+            }, 3000);
+
+            // Mark project as modified
+            appState.isDirty = true;
+        } catch (error) {
+            console.error('Error processing AI generated values:', error);
+
+            // Show error notification
+            const errorNotificationEl = document.createElement('div');
+            errorNotificationEl.className = 'notification error';
+            errorNotificationEl.textContent = 'Error processing AI generated values';
+            document.body.appendChild(errorNotificationEl);
+
+            setTimeout(() => {
+                errorNotificationEl.classList.add('fadeout');
+                setTimeout(() => {
+                    if (errorNotificationEl.parentNode) {
+                        document.body.removeChild(errorNotificationEl);
+                    }
+                }, 500);
+            }, 3000);
+        }
     });
 
     // Listen for AI generation failure
     eventBus.on('ai-generation-failed', ({ error }) => {
+        // Remove any loading state
+        document.body.classList.remove('processing');
+
+        // Remove any pending loading notifications
+        const loadingNotifications = document.querySelectorAll('.notification.info:not(.fadeout)');
+        loadingNotifications.forEach(notification => {
+            if (notification.textContent.includes('Generating AI values')) {
+                notification.parentNode.removeChild(notification);
+            }
+        });
+
         showNotification(`AI generation failed: ${error}`, 'error');
     });
 

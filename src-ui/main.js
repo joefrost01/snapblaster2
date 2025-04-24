@@ -89,5 +89,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
     };
 
+    console.log('Checking AI button setup...');
+    const aiButton = document.getElementById('ai-btn');
+    if (aiButton) {
+        console.log('AI button found in DOM');
+    } else {
+        console.error('AI button not found in DOM!');
+    }
+
     console.log("Initialization complete");
 });

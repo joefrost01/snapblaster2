@@ -337,6 +337,18 @@ async fn start_morph(
 /// Set the OpenAI API key
 #[tauri::command]
 async fn set_openai_api_key(api_key: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Also check if we should use environment variable instead
+    if let Ok(env_key) = std::env::var("OPENAI_API_KEY") {
+        // If env var is set, inform the user but still store their key as fallback
+        info!("Note: Using OPENAI_API_KEY from environment variable. The provided key will be used as fallback.");
+
+        // Update the state with the provided key as fallback
+        let mut state_guard = state.shared_state.write().unwrap();
+        state_guard.project.openai_api_key = Some(api_key);
+        return Ok(());
+    }
+
+    // No env var, use the provided key
     let mut state_guard = state.shared_state.write().unwrap();
     state_guard.project.openai_api_key = Some(api_key);
     Ok(())
