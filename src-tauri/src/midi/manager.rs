@@ -423,6 +423,27 @@ impl MidiManager {
                 guard.active_modifier
             };
 
+            // Check if an active morph is in progress (before handling any new pad press)
+            let morph_in_progress = {
+                let guard = state.read().unwrap();
+                guard.active_morph.is_some()
+            };
+
+            // If a morph is in progress and this is a snap selection (not a modifier),
+            // cancel the morph by sending a MorphCompleted event
+            if morph_in_progress && pad >= 8 && velocity > 0 {
+                info!("Canceling active morph because a new snap was selected");
+
+                // Clear the active morph state
+                {
+                    let mut state_guard = state.write().unwrap();
+                    state_guard.active_morph = None;
+                }
+
+                // Send event to notify morph engine and other components
+                let _ = self.event_bus.publish(Event::MorphCompleted);
+            }
+
             if let Some(modifier_pad) = active_modifier {
                 // This is a morph target selection
                 info!("Morph target selected: pad={}, snap_id={}", pad, snap_id);

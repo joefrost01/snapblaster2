@@ -93,6 +93,28 @@ impl MorphEngine {
                         }));
                     },
 
+                    // Handle MorphCompleted event for direct cancellation 
+                    Event::MorphCompleted => {
+                        info!("Received morph completed/cancelled event");
+
+                        // Cancel any active morph task
+                        if let Some(task) = morph_task.take() {
+                            task.abort();
+                            info!("Cancelled morph task due to explicit completion event");
+                        }
+
+                        // Ensure the morph state is cleared
+                        let mut state_guard = self.state.write().unwrap();
+                        if state_guard.active_morph.is_some() {
+                            state_guard.active_morph = None;
+                            info!("Cleared active morph state");
+
+                            // Request LED update to reflect the change
+                            drop(state_guard);
+                            let _ = self.event_bus.try_publish(Event::RequestUpdateLEDs);
+                        }
+                    },
+
                     // Handle RequestUpdateLEDs event
                     Event::RequestUpdateLEDs => {
                         // Forward to the MIDI manager to update LEDs
@@ -207,7 +229,30 @@ impl MorphEngine {
             // If we should quantize and have a wait time, sleep until the next bar
             if should_quantize && wait_ms > 0 {
                 info!("Quantizing morph to next bar boundary in {} ms", wait_ms);
+
+                // Before waiting, check if the morph was cancelled during this setup
+                let morph_still_active = {
+                    let state_guard = state.read().unwrap();
+                    state_guard.active_morph.is_some()
+                };
+
+                if !morph_still_active {
+                    info!("Morph was cancelled before quantization wait completed");
+                    return;
+                }
+
                 tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+
+                // Check again after waiting if morph is still active
+                let morph_still_active = {
+                    let state_guard = state.read().unwrap();
+                    state_guard.active_morph.is_some()
+                };
+
+                if !morph_still_active {
+                    info!("Morph was cancelled during quantization wait");
+                    return;
+                }
             }
         }
 
@@ -251,6 +296,17 @@ impl MorphEngine {
 
         loop {
             interval.tick().await;
+
+            // Check if morph was cancelled - this is the key addition
+            let morph_still_active = {
+                let state_guard = state.read().unwrap();
+                state_guard.active_morph.is_some()
+            };
+
+            if !morph_still_active {
+                info!("Morph was cancelled during execution");
+                return;
+            }
 
             // Calculate progress
             let elapsed = start_time.elapsed();
