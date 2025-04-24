@@ -6,6 +6,7 @@ use std::env;
 use std::error::Error;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
+use tracing::info;
 
 /// AI Service for generating parameter values with OpenAI
 pub struct AIService {
@@ -203,7 +204,7 @@ impl AIService {
         prompt.push_str("- Interpret the snapshot name and description to determine appropriate values\n");
         prompt.push_str("- Use parameter descriptions to inform your decisions\n");
         prompt.push_str("- Ensure consistency across related parameters\n");
-
+        info!(prompt);
         prompt
     }
 
