@@ -153,11 +153,11 @@ function setupEventListeners() {
     eventBus.on('link-status-changed', (data) => {
         // Update UI elements if needed
         const linkStatusText = document.getElementById('link-status-text');
-        const linkStatusIndicator = document.getElementById('link-status-indicator');
+        // const linkStatusIndicator = document.getElementById('link-status-indicator');
 
         if (linkStatusText) {
             if (data.connected) {
-                linkStatusText.textContent = `Connected (${data.peers} peer${data.peers !== 1 ? 's' : ''})`;
+                linkStatusText.textContent = ` (${data.peers} peer${data.peers !== 1 ? 's' : ''})`;
                 linkStatusText.classList.add('connected');
                 linkStatusText.classList.remove('disconnected');
             } else {
@@ -167,10 +167,10 @@ function setupEventListeners() {
             }
         }
 
-        if (linkStatusIndicator) {
-            linkStatusIndicator.classList.toggle('active', data.connected);
-            linkStatusIndicator.classList.toggle('inactive', !data.connected);
-        }
+        // if (linkStatusIndicator) {
+        //     linkStatusIndicator.classList.toggle('active', data.connected);
+        //     linkStatusIndicator.classList.toggle('inactive', !data.connected);
+        // }
     });
 
     eventBus.on('link-tempo-changed', (data) => {
