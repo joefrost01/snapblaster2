@@ -1,1 +1,0 @@
-Improve colour-scheme for pads and on-screen grid

@@ -569,6 +569,21 @@ Return the appropriate CC value (0-127) for the intro snap in this context.
 - Should MIDI thru be offered?
 - Should controller settings persist across sessions?
 
+### C. Pad Colors and LED Compatibility
+Snap-Blaster supports a consistent visual model across multiple grid controllers, including older tri-color devices such as the APC Mini and Launchpad Mini Mk2, as well as newer full-RGB models.
+
+To ensure maximum compatibility, Snap-Blaster uses a minimal, semantically meaningful LED abstraction based on:
+
+#### Color
+- Off
+- Red
+- Green
+- Amber (mixed red + green)
+
+#### Blinking State
+- Solid
+- Blinking
+
 ---
 
 ## Status
@@ -584,4 +599,6 @@ Return the appropriate CC value (0-127) for the intro snap in this context.
 Snap-Blaster delivers performance-grade control over MIDI CCs with a fluid workflow and clean, studio-friendly UI. It enables deep expression without the pain of drawn automation. With AI, morphing, and controller integration, it's a powerful tool for producers and performers alike.
 
 > *Build the automation brain you wish your DAW had.*
+
+
 
