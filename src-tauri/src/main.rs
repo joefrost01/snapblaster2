@@ -667,6 +667,61 @@ async fn main() {
         });
     }
 
+    let midi_manager_for_updates = midi_manager.clone();
+    let midi_update_bus = event_bus.clone();
+
+    tokio::spawn(async move {
+        let mut rx = midi_update_bus.subscribe();
+
+        while let Ok(event) = rx.recv().await {
+            if let Event::RequestMIDIUpdate = event {
+                if let Some(ref midi_manager) = midi_manager_for_updates {
+                    if let Err(e) = midi_manager.update_controller_leds() {
+                        error!("Failed to update controller LEDs: {}", e);
+                    } else {
+                        debug!("Updated controller LEDs on request");
+                    }
+                }
+            }
+        }
+    });
+
+    // Add a handler for CC value changes during morphing
+    let midi_manager_for_cc = midi_manager.clone();
+    let cc_events_bus = event_bus.clone();
+
+    tokio::spawn(async move {
+        let mut rx = cc_events_bus.subscribe();
+
+        while let Ok(event) = rx.recv().await {
+            if let Event::CCValueChanged { param_id, value } = event {
+                if let Some(ref midi_manager) = midi_manager_for_cc {
+                    // Get the CC number for this parameter
+                    let cc_number = {
+                        let state = midi_manager.get_state();
+                        if let Some(state) = state {
+                            let guard = state.read().unwrap();
+                            if param_id < guard.project.parameters.len() {
+                                guard.project.parameters[param_id].cc
+                            } else {
+                                continue; // Skip if parameter doesn't exist
+                            }
+                        } else {
+                            continue; // Skip if no state
+                        }
+                    };
+
+                    // Send the CC value to the MIDI output
+                    if let Err(e) = midi_manager.send_cc(0, cc_number, value) {
+                        error!("Failed to send CC during morph: {}", e);
+                    } else {
+                        debug!("Sent morph CC: ch=0 cc={} val={}", cc_number, value);
+                    }
+                }
+            }
+        }
+    });
+
     // Clone event_bus for AppState before we move it into the setup closure
     let app_state_event_bus = event_bus.clone();
 

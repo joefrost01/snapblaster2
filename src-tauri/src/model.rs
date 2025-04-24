@@ -89,9 +89,27 @@ pub struct ProjectState {
 
     /// Currently active morphing operation, if any
     pub active_morph: Option<ActiveMorph>,
+
+    /// Currently active modifier pad (0-4 for morph durations, None if no modifier active)
+    pub active_modifier: Option<u8>,
+
+    /// Current morph duration in bars (1, 2, 4, 8, or 16)
+    pub morph_duration: u8,
 }
 
-/// Information about an active morphing operation
+impl Default for ProjectState {
+    fn default() -> Self {
+        Self {
+            project: Project::default(),
+            current_bank: 0,
+            current_snap: 0,
+            active_morph: None,
+            active_modifier: None,
+            morph_duration: 4, // Default to 4 bars
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ActiveMorph {
     /// Source snap index
@@ -114,17 +132,6 @@ pub struct ActiveMorph {
 
     /// Current interpolated values
     pub current_values: Vec<u8>,
-}
-
-impl Default for ProjectState {
-    fn default() -> Self {
-        Self {
-            project: Project::default(),
-            current_bank: 0,
-            current_snap: 0,
-            active_morph: None,
-        }
-    }
 }
 
 /// Shared application state that can be accessed from multiple components

@@ -84,6 +84,10 @@ pub enum Event {
     },
     MorphCompleted,
 
+    // New events for MIDI controller morph handling
+    RequestUpdateLEDs,
+    RequestMIDIUpdate,
+
     // Project events
     ProjectLoaded,
     ProjectSaved,
@@ -252,6 +256,8 @@ impl Event {
             Event::RequestLinkTempo => "RequestLinkTempo",
             Event::RequestNextBarTime => "RequestNextBarTime",
             Event::NextBarTime { .. } => "NextBarTime",
+            Event::RequestUpdateLEDs => "RequestUpdateLEDs",
+            Event::RequestMIDIUpdate => "RequestMIDIUpdate",
         }
     }
 
@@ -343,6 +349,8 @@ impl fmt::Display for Event {
             Event::NextBarTime { wait_time_ms } => {
                 write!(f, "NextBarTime: wait_time_ms={}", wait_time_ms)
             },
+            Event::RequestUpdateLEDs => write!(f, "RequestUpdateLEDs"),
+            Event::RequestMIDIUpdate => write!(f, "RequestMIDIUpdate"),
         }
     }
 }

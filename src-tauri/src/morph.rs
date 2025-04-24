@@ -1,6 +1,6 @@
 // src-tauri/src/morph.rs
 use crate::events::{Event, EventBus, MorphCurve};
-use crate::model::{ActiveMorph, SharedState};
+use crate::model::{ActiveMorph, Parameter, SharedState};
 use std::f64::consts::PI;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,6 +39,22 @@ impl MorphEngine {
             // Event loop
             while let Ok(event) = self.event_receiver.recv().await {
                 match event {
+                    Event::PadPressed { pad, velocity } => {
+                        // Handle note-off events for modifiers (pads 0-4)
+                        if pad < 5 && velocity == 0 {
+                            // Note-off for a modifier pad
+                            let mut state_guard = self.state.write().unwrap();
+                            if state_guard.active_modifier == Some(pad) {
+                                // Clear the active modifier
+                                state_guard.active_modifier = None;
+
+                                // Let the MIDI manager know to update LEDs
+                                drop(state_guard);
+                                // Use try_publish to avoid error handling
+                                let _ = self.event_bus.try_publish(Event::RequestUpdateLEDs);
+                            }
+                        }
+                    },
                     Event::MorphInitiated {
                         from_snap,
                         to_snap,
@@ -76,6 +92,14 @@ impl MorphEngine {
                             ).await;
                         }));
                     },
+
+                    // Handle RequestUpdateLEDs event
+                    Event::RequestUpdateLEDs => {
+                        // Forward to the MIDI manager to update LEDs
+                        self.event_bus.try_publish(Event::RequestMIDIUpdate);
+                        debug!("Requested MIDI LED update");
+                    },
+
                     Event::Shutdown => {
                         info!("Shutting down morph engine");
 
@@ -107,16 +131,31 @@ impl MorphEngine {
         curve_type: MorphCurve,
         quantize: bool,
     ) {
-        // Get the values for both snaps
-        let (from_values, to_values, param_count) = {
+        // Get the values for both snaps and parameters
+        let (from_values, to_values, parameters, param_count) = {
             let state_guard = state.read().unwrap();
             let bank = &state_guard.project.banks[bank_id];
-            let from = &bank.snaps[from_snap];
-            let to = &bank.snaps[to_snap];
+
+            // Safely get the snap values
+            let from = if from_snap < bank.snaps.len() {
+                &bank.snaps[from_snap]
+            } else {
+                error!("Invalid from_snap index: {}", from_snap);
+                return;
+            };
+
+            let to = if to_snap < bank.snaps.len() {
+                &bank.snaps[to_snap]
+            } else {
+                error!("Invalid to_snap index: {}", to_snap);
+                return;
+            };
+
             let param_count = state_guard.project.parameters.len();
+            let parameters = state_guard.project.parameters.clone();
 
             // Clone the values to avoid holding the lock for too long
-            (from.values.clone(), to.values.clone(), param_count)
+            (from.values.clone(), to.values.clone(), parameters, param_count)
         };
 
         // Create a new active morph
@@ -207,12 +246,18 @@ impl MorphEngine {
         let mut interval = time::interval(update_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
+        // Last sent values for each parameter - avoid sending duplicates
+        let mut last_sent_values: Vec<Option<u8>> = vec![None; param_count];
+
         loop {
             interval.tick().await;
 
             // Calculate progress
             let elapsed = start_time.elapsed();
             if elapsed >= total_duration {
+                // Morph complete - send final values
+                send_morph_cc_values(&event_bus, &parameters, &to_values, &mut last_sent_values).await;
+
                 // Morph complete
                 Self::complete_morph(&state, &event_bus, &to_values).await;
                 break;
@@ -239,6 +284,9 @@ impl MorphEngine {
                     morph.current_values = current_values.clone();
                 }
             }
+
+            // Send current CC values to MIDI output
+            send_morph_cc_values(&event_bus, &parameters, &current_values, &mut last_sent_values).await;
 
             // Publish progress event
             let _ = event_bus.publish(Event::MorphProgressed {
@@ -326,5 +374,33 @@ impl MorphEngine {
         }
 
         result
+    }
+}
+
+
+/// Helper function to send CC values during morphing
+async fn send_morph_cc_values(
+    event_bus: &EventBus,
+    parameters: &[Parameter],
+    values: &[u8],
+    last_sent: &mut [Option<u8>]
+) {
+    // For each parameter that has a value
+    for (idx, param) in parameters.iter().enumerate() {
+        if idx < values.len() {
+            let value = values[idx];
+
+            // Only send if value has changed since last update
+            if last_sent[idx] != Some(value) {
+                // Save this value to avoid redundant sends
+                last_sent[idx] = Some(value);
+
+                // Send CC value changed event
+                let _ = event_bus.publish(Event::CCValueChanged {
+                    param_id: idx,
+                    value,
+                });
+            }
+        }
     }
 }

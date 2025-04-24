@@ -1,4 +1,4 @@
-use crate::events::{Event, EventBus};
+use crate::events::{Event, EventBus, MorphCurve};
 use crate::midi::controller::{create_controller, MidiGridController, Rgb};
 use crate::model::SharedState;
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
@@ -39,6 +39,10 @@ impl MidiManager {
             output_connections: Arc::new(Mutex::new(Vec::new())),
             state,
         }
+    }
+
+    pub fn get_state(&self) -> Option<SharedState> {
+        self.state.clone()
     }
 
     /// Create a virtual MIDI port for other apps
@@ -243,17 +247,26 @@ impl MidiManager {
                 // Clear all LEDs to start with a clean state
                 ctrl.clear_leds();
 
-                // Top row: Bank indicators (0-7)
+                // Top row: 
+                // - Pads 0-4: Morph duration modifiers (red normally, green when active)
+                // - Pads 5-7: Bank indicators
                 for i in 0..8 {
-                    let color = if i == st.current_bank {
-                        // Current bank: RED (matches UI)
-                        Rgb::red()  // RED for modifiers/banks
-                    } else if i < st.project.banks.len() {
+                    let color = if i < 5 {
+                        // Morph duration modifiers (0-4)
+                        if Some(i) == st.active_modifier {
+                            Rgb::green()  // Active modifier: GREEN
+                        } else {
+                            Rgb::red()    // Normal modifier: RED
+                        }
+                    } else if i == (st.current_bank as u8) {
+                        // Current bank (5-7): RED (matches UI)
+                        Rgb::red()
+                    } else if i < (st.project.banks.len() as u8) {
                         // Available bank: dimmed RED
-                        Rgb::new(128, 0, 0)  // Dimmed RED for available banks
+                        Rgb::new(128, 0, 0)
                     } else {
                         // Unavailable bank: very dim RED
-                        Rgb::new(64, 0, 0)  // Very dim RED for unavailable banks
+                        Rgb::new(64, 0, 0)
                     };
 
                     ctrl.set_led(i as u8, color);
@@ -269,18 +282,50 @@ impl MidiManager {
                         let has_snap = !bank.snaps[idx].name.is_empty();
                         let is_current = idx == st.current_snap;
 
+                        // Check if a morph is in progress and this is the target snap
+                        let is_morph_target = if let Some(ref morph) = st.active_morph {
+                            idx == morph.to_snap
+                        } else {
+                            false
+                        };
+
                         let color = if is_current {
                             // Current snap: GREEN (selected)
-                            Rgb::green()  // GREEN for selected snap
+                            Rgb::green()
+                        } else if is_morph_target {
+                            // Morph target: PURPLE (or another distinctive color)
+                            Rgb::purple()
                         } else if has_snap {
                             // Available snap: YELLOW
-                            Rgb::yellow()  // YELLOW for available snaps
+                            Rgb::yellow()
                         } else {
                             // Empty slot: very dim
-                            Rgb::new(16, 16, 16)  // Very dim/off for empty slots
+                            Rgb::new(16, 16, 16)
                         };
 
                         ctrl.set_led(pad, color);
+                    }
+
+                    // Show morph progress by lighting up pads with different colors
+                    if let Some(ref morph) = st.active_morph {
+                        // Calculate how many pads to light based on progress
+                        // We'll light a row (0-7) of pads on top to show progress
+
+                        // Determine how many top-row pads to light based on progress
+                        let progress_pads = (morph.progress * 8.0).floor() as usize;
+
+                        // Use a dynamic color based on progress - shift from blue to green
+                        for i in 0..progress_pads.min(8) {
+                            // Pulse the pad by varying intensity with progress
+                            let pulse_factor = 0.7 + 0.3 * ((morph.progress * 5.0) % 1.0);
+
+                            // Blend from blue to green as morph progresses
+                            let blue = ((1.0 - morph.progress) * 255.0 * pulse_factor) as u8;
+                            let green = ((morph.progress) * 255.0 * pulse_factor) as u8;
+
+                            // Set the progress indicator LEDs
+                            ctrl.set_led(i as u8, Rgb::new(0, green, blue));
+                        }
                     }
                 }
 
@@ -293,89 +338,215 @@ impl MidiManager {
     }
 
     /// Handle a pad press event from the hardware controller
-    pub async fn handle_pad_pressed(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
-        if velocity == 0 { return Ok(()); } // Ignore note-off events
+    // src-tauri/src/midi/manager.rs (partial)
+    // Updated handle_pad_pressed method to support morph modifiers
 
+    /// Handle a pad press event from the hardware controller
+    pub async fn handle_pad_pressed(&self, pad: u8, velocity: u8) -> Result<(), Box<dyn Error>> {
         info!("Handling pad press: pad={}, velocity={}", pad, velocity);
 
         if let Some(ref state) = self.state {
-            // Handle top row pads for bank selection
-            if pad < 8 {
+            // Handle note-off events for modifiers (top row pads 0-4)
+            if pad < 5 && velocity == 0 {
                 let mut state_guard = state.write().unwrap();
 
-                if pad < state_guard.project.banks.len() as u8 {
-                    // Change bank
-                    state_guard.current_bank = pad as usize;
-                    drop(state_guard);
+                // Check if this is the currently active modifier
+                if state_guard.active_modifier == Some(pad) {
+                    // Clear the active modifier
+                    state_guard.active_modifier = None;
+                    drop(state_guard); // Release the lock before updating LEDs
 
-                    // Publish event
-                    let _ = self.event_bus.publish(Event::BankSelected {
-                        bank_id: pad as usize
-                    });
+                    // Reset the LED to standard color (red)
+                    if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
+                        ctrl.set_led(pad, Rgb::red());
+                        ctrl.refresh_state();
+                    }
 
-                    // Update controller display
-                    self.update_controller_leds()?;
+                    return Ok(());
                 }
+
                 return Ok(());
             }
 
-            // Non-top-row pads are for snap selection
+            // Check if this is a modifier pad press (top row, pads 0-4)
+            let is_morph_modifier = pad < 5 && velocity > 0;
+
+            // Get the current active modifier if any
+            let active_modifier = {
+                let state_guard = state.read().unwrap();
+                state_guard.active_modifier
+            };
+
+            // Handle top row pads for bank selection or morph modifiers
+            if pad < 8 && velocity > 0 {
+                if is_morph_modifier {
+                    // Handle morph modifier press - set active modifier
+                    let mut state_guard = state.write().unwrap();
+
+                    // Set the morph duration based on the pad
+                    let duration_bars = match pad {
+                        0 => 1,  // 1 bar
+                        1 => 2,  // 2 bars
+                        2 => 4,  // 4 bars
+                        3 => 8,  // 8 bars
+                        4 => 16, // 16 bars
+                        _ => 4,  // Default: 4 bars
+                    };
+
+                    // Store the active modifier and duration
+                    state_guard.active_modifier = Some(pad);
+                    state_guard.morph_duration = duration_bars;
+                    drop(state_guard); // Release the lock before updating LEDs
+
+                    // Color the modifier pad green to indicate it's active
+                    if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
+                        ctrl.set_led(pad, Rgb::green());
+                        ctrl.refresh_state();
+                    }
+
+                    return Ok(());
+                } else {
+                    // Regular bank selection (pads 5-7 or when no modifier is active)
+                    let mut state_guard = state.write().unwrap();
+
+                    if pad < state_guard.project.banks.len() as u8 {
+                        // Change bank
+                        state_guard.current_bank = pad as usize;
+                        drop(state_guard);
+
+                        // Publish event
+                        let _ = self.event_bus.publish(Event::BankSelected {
+                            bank_id: pad as usize
+                        });
+
+                        // Update controller display
+                        self.update_controller_leds()?;
+                    }
+                    return Ok(());
+                }
+            }
+
+            // Non-top-row pads are for snap selection or morph targets
             let snap_id = (pad - 8) as usize;
             let bank_id;
-            let cc_values: Vec<(u8, u8)>;
 
-            // First check if this is a valid snap
-            {
-                let guard = state.read().unwrap();
-                bank_id = guard.current_bank;
+            // Check if this is a regular snap selection or morph target selection
+            if let Some(modifier_pad) = active_modifier {
+                // This is a morph target selection
+                info!("Morph target selected: pad={}, snap_id={}", pad, snap_id);
 
-                if bank_id >= guard.project.banks.len() {
-                    return Ok(());  // Invalid bank
+                // First validate that this is a valid snap
+                {
+                    let guard = state.read().unwrap();
+                    bank_id = guard.current_bank;
+
+                    if bank_id >= guard.project.banks.len() {
+                        return Ok(());  // Invalid bank
+                    }
+
+                    let bank = &guard.project.banks[bank_id];
+                    if snap_id >= bank.snaps.len() || bank.snaps[snap_id].name.is_empty() {
+                        return Ok(());  // Invalid snap
+                    }
                 }
 
-                let bank = &guard.project.banks[bank_id];
-                if snap_id >= bank.snaps.len() || bank.snaps[snap_id].name.is_empty() {
-                    return Ok(());  // Invalid snap
+                // Get the current snap (source)
+                let from_snap: usize;
+                let duration_bars: u8;
+
+                {
+                    let guard = state.read().unwrap();
+                    from_snap = guard.current_snap;
+                    duration_bars = guard.morph_duration;
+
+                    // Don't morph to the same snap
+                    if from_snap == snap_id {
+                        return Ok(());
+                    }
                 }
 
-                // Collect the parameter values we'll need to send
-                cc_values = guard.project.parameters.iter().enumerate()
-                    .filter_map(|(idx, param)| {
-                        if idx < bank.snaps[snap_id].values.len() {
-                            let value = bank.snaps[snap_id].values[idx];
-                            Some((param.cc, value))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                // Clear the modifier state
+                {
+                    let mut state_guard = state.write().unwrap();
+                    state_guard.active_modifier = None;
+                }
+
+                // Reset the modifier LED back to red
+                if let Some(ref mut ctrl) = *self.controller.lock().unwrap() {
+                    ctrl.set_led(modifier_pad, Rgb::red());
+                    ctrl.refresh_state();
+                }
+
+                // Start the morph (use Link-quantized morphing)
+                let _ = self.event_bus.publish(Event::MorphInitiated {
+                    from_snap,
+                    to_snap: snap_id,
+                    duration_bars,
+                    curve_type: MorphCurve::Linear,
+                    quantize: true, // Always quantize to next bar
+                });
+
+                info!("Started morph from snap {} to {} over {} bars", 
+                  from_snap, snap_id, duration_bars);
+
+                return Ok(());
+            } else {
+                // Regular snap selection (no modifier active)
+                let cc_values: Vec<(u8, u8)>;
+
+                // First check if this is a valid snap
+                {
+                    let guard = state.read().unwrap();
+                    bank_id = guard.current_bank;
+
+                    if bank_id >= guard.project.banks.len() {
+                        return Ok(());  // Invalid bank
+                    }
+
+                    let bank = &guard.project.banks[bank_id];
+                    if snap_id >= bank.snaps.len() || bank.snaps[snap_id].name.is_empty() {
+                        return Ok(());  // Invalid snap
+                    }
+
+                    // Collect the parameter values we'll need to send
+                    cc_values = guard.project.parameters.iter().enumerate()
+                        .filter_map(|(idx, param)| {
+                            if idx < bank.snaps[snap_id].values.len() {
+                                let value = bank.snaps[snap_id].values[idx];
+                                Some((param.cc, value))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                }
+
+                // Update the current state (snap selection)
+                {
+                    let mut state_guard = state.write().unwrap();
+                    state_guard.current_snap = snap_id;
+                }
+
+                // Add more logging to debug
+                info!("Ready to send CC values for snap {}", snap_id);
+
+                // Send the selected snap's values via MIDI CCs - to the VIRTUAL port, not the hardware
+                if !cc_values.is_empty() {
+                    info!("Sending {} CC values for snap {}", cc_values.len(), snap_id);
+
+                    // Make sure this is correctly sending to your virtual MIDI port
+                    self.send_snap_values(&cc_values)?;
+                }
+
+                // Publish the event
+                let _ = self.event_bus.publish(Event::SnapSelected {
+                    bank: bank_id,
+                    snap_id
+                });
+
+                // Update the controller LEDs
+                self.update_controller_leds()?;
             }
-
-            // Update the current state (snap selection)
-            {
-                let mut state_guard = state.write().unwrap();
-                state_guard.current_snap = snap_id;
-            }
-
-            // Add more logging to debug
-            info!("Ready to send CC values for snap {}", snap_id);
-
-            // Send the selected snap's values via MIDI CCs - to the VIRTUAL port, not the hardware
-            if !cc_values.is_empty() {
-                info!("Sending {} CC values for snap {}", cc_values.len(), snap_id);
-
-                // Make sure this is correctly sending to your virtual MIDI port
-                self.send_snap_values(&cc_values)?;
-            }
-
-            // Publish the event
-            let _ = self.event_bus.publish(Event::SnapSelected {
-                bank: bank_id,
-                snap_id
-            });
-
-            // Update the controller LEDs
-            self.update_controller_leds()?;
         }
 
         Ok(())

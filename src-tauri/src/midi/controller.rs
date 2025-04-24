@@ -109,6 +109,9 @@ pub trait MidiGridController: Send + 'static {
 
     /// Gets the name of this controller
     fn get_name(&self) -> &str;
+    fn set_progress_led(&mut self, pad: u8, progress: f64) -> Result<(), Box<dyn Error>>;
+    fn set_morph_target_led(&mut self, pad: u8) -> Result<(), Box<dyn Error>>;
+    fn set_active_modifier_led(&mut self, pad: u8) -> Result<(), Box<dyn Error>>;
 
     /// Send a CC value to the output MIDI port
     fn send_cc(&mut self, channel: u8, cc: u8, value: u8) -> Result<(), Box<dyn Error>>;

@@ -379,6 +379,49 @@ impl MidiGridController for LaunchpadX {
         "Launchpad X"
     }
 
+    fn set_progress_led(&mut self, pad: u8, progress: f64) -> Result<(), Box<dyn Error>> {
+        if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
+            // Calculate a pulsing color based on the progress
+            // Blue (low progress) to Green (high progress) transition
+            let blue = ((1.0 - progress) * 255.0) as u8;
+            let green = (progress * 255.0) as u8;
+
+            // Add a pulse effect based on progress
+            let pulse = (((progress * 10.0) % 1.0) * 0.5 + 0.5) as f64; // Oscillates between 0.5 and 1.0
+
+            // Apply pulse to brightness
+            let b = (blue as f64 * pulse) as u8;
+            let g = (green as f64 * pulse) as u8;
+
+            let color = Rgb::new(0, g, b);
+
+            // Use the RGB SysEx method for more accurate color control
+            self.send_rgb_color(conn, pad, color)?;
+        }
+
+        Ok(())
+    }
+
+    fn set_morph_target_led(&mut self, pad: u8) -> Result<(), Box<dyn Error>> {
+        if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
+            // Use a distinctive color for the morph target (purple)
+            let color = Rgb::new(180, 0, 180);
+            self.send_rgb_color(conn, pad, color)?;
+        }
+
+        Ok(())
+    }
+
+    fn set_active_modifier_led(&mut self, pad: u8) -> Result<(), Box<dyn Error>> {
+        if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
+            // Bright green for active modifiers
+            let color = Rgb::new(0, 255, 0);
+            self.send_rgb_color(conn, pad, color)?;
+        }
+
+        Ok(())
+    }
+
     fn send_cc(&mut self, channel: u8, cc: u8, value: u8) -> Result<(), Box<dyn Error>> {
         // Send CC message to output port
         // if let Some(conn) = &mut *self.output_connection.lock().unwrap() {
