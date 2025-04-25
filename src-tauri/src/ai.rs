@@ -1,12 +1,12 @@
 use crate::events::{Event, EventBus};
-use crate::model::SharedState;
+use crate::model::{Parameter, SharedState};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// AI Service for generating parameter values with OpenAI
 pub struct AIService {
@@ -49,6 +49,7 @@ struct ParameterValue {
     cc: u8,
     value: u8,
     name: String,
+    reasoning: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -104,7 +105,7 @@ impl AIService {
                         };
 
                         // Build a comprehensive prompt with all parameters and context
-                        let prompt = self.build_comprehensive_prompt(
+                        let prompt = self.build_audio_reasoning_prompt(
                             &project_name,
                             &bank_name,
                             &snap_name,
@@ -161,20 +162,79 @@ impl AIService {
         })
     }
 
-    /// Build a comprehensive prompt that includes project, bank, snap, and parameter details
-    fn build_comprehensive_prompt(
+    /// Build a prompt focused on reasoning about audio parameters and their relationship to desired sound
+    fn build_audio_reasoning_prompt(
         &self,
         project_name: &str,
         bank_name: &str,
         snap_name: &str,
         snap_description: &str,
-        parameters: &[crate::model::Parameter],
+        parameters: &[Parameter],
     ) -> String {
-        let mut prompt = format!(
-            "I need MIDI CC values (0-127) for a snapshot in a MIDI CC controller setup. Please analyze the context and generate appropriate values.\n\n"
-        );
+        let mut prompt = String::new();
 
-        // Add project, bank and snap context
+        // Core audio engineering concepts
+        prompt.push_str("# Audio Engineering Framework\n\n");
+
+        prompt.push_str("You're setting MIDI CC values (0-127) for audio parameters. For each parameter, you must analyze:\n\n");
+
+        prompt.push_str("1. FUNCTION: What does this parameter change in the sound?\n");
+        prompt.push_str("2. DIRECTION: As values increase, does the effect increase or decrease?\n");
+        prompt.push_str("3. GOAL: What sound qualities does the user want based on the snapshot description?\n");
+        prompt.push_str("4. ALIGNMENT: How should this parameter be set to support those goals?\n\n");
+
+        // Parameter categories and their general behavior
+        prompt.push_str("## Parameter Category Framework\n\n");
+
+        prompt.push_str("### FILTERS - Control which frequencies pass through\n");
+        prompt.push_str("- High-pass filter (HPF): Removes bass frequencies. Higher values = less bass.\n");
+        prompt.push_str("- Low-pass filter (LPF): Removes treble frequencies. Lower values = less treble.\n");
+        prompt.push_str("- Band-pass filter (BPF): Isolates mid frequencies. Middle values typically best.\n\n");
+
+        prompt.push_str("### DYNAMICS - Control volume relationships\n");
+        prompt.push_str("- Compressor threshold: Lower values = more compression.\n");
+        prompt.push_str("- Compressor ratio: Higher values = more aggressive compression.\n");
+        prompt.push_str("- Gate threshold: Higher values = more gating (silence).\n\n");
+
+        prompt.push_str("### EFFECTS - Add sonic characteristics\n");
+        prompt.push_str("- Reverb/delay mix: Higher values = more wet sound.\n");
+        prompt.push_str("- Distortion/saturation: Higher values = more distorted sound.\n");
+        prompt.push_str("- Modulation (chorus/flanger/phaser): Higher values = more pronounced effect.\n\n");
+
+        prompt.push_str("### EQ - Shape frequency response\n");
+        prompt.push_str("- High frequency gain: Higher values = brighter sound.\n");
+        prompt.push_str("- Mid frequency gain: Higher values = more present sound.\n");
+        prompt.push_str("- Low frequency gain: Higher values = bassier sound.\n\n");
+
+        // Few-shot examples showing reasoning process
+        prompt.push_str("## Examples of Parameter Setting Reasoning\n\n");
+
+        prompt.push_str("Example 1:\n");
+        prompt.push_str("- Parameter: \"High-pass filter cutoff\"\n");
+        prompt.push_str("- Description: \"Full bass techno drop\"\n");
+        prompt.push_str("- Reasoning: This is a FILTER parameter that REMOVES bass as value increases. Since we want FULL BASS, we need to set this very LOW.\n");
+        prompt.push_str("- Value: 0 (No bass removal)\n\n");
+
+        prompt.push_str("Example 2:\n");
+        prompt.push_str("- Parameter: \"Reverb amount\"\n");
+        prompt.push_str("- Description: \"Dry, punchy drum section\"\n");
+        prompt.push_str("- Reasoning: This is an EFFECT parameter that ADDS space/wetness as value increases. Since we want DRY sound, we need to set this LOW.\n");
+        prompt.push_str("- Value: 10 (Minimal reverb)\n\n");
+
+        prompt.push_str("Example 3:\n");
+        prompt.push_str("- Parameter: \"Compressor threshold\"\n");
+        prompt.push_str("- Description: \"Heavily squashed pad sound\"\n");
+        prompt.push_str("- Reasoning: This is a DYNAMICS parameter where LOWER values cause MORE compression. Since we want HEAVILY SQUASHED sound, we need a LOW threshold.\n");
+        prompt.push_str("- Value: 30 (Heavy compression)\n\n");
+
+        prompt.push_str("Example 4:\n");
+        prompt.push_str("- Parameter: \"Low EQ gain\"\n");
+        prompt.push_str("- Description: \"Thin atmospheric pad, no sub frequencies\"\n");
+        prompt.push_str("- Reasoning: This is an EQ parameter that ADDS bass as value increases. Since we want a THIN sound with NO SUB, we need this LOW.\n");
+        prompt.push_str("- Value: 20 (Minimal bass boost)\n\n");
+
+        // Snapshot context
+        prompt.push_str("## Snapshot Context\n\n");
         prompt.push_str(&format!("Project: {}\n", project_name));
         prompt.push_str(&format!("Bank: {}\n", bank_name));
         prompt.push_str(&format!("Snapshot Name: {}\n", snap_name));
@@ -182,11 +242,20 @@ impl AIService {
         if !snap_description.is_empty() {
             prompt.push_str(&format!("Snapshot Description: {}\n\n", snap_description));
         } else {
-            prompt.push_str("\n");
+            prompt.push_str("Snapshot Description: Default balanced sound\n\n");
         }
 
-        // Add parameter details
-        prompt.push_str("Parameters to set values for:\n");
+        // Key sound goals extraction
+        prompt.push_str("## Sound Goals Analysis\n\n");
+        prompt.push_str("Based on the snapshot description, extract the key sound qualities desired:\n\n");
+
+        // Ensure sound goals are always provided
+        if snap_description.is_empty() {
+            prompt.push_str("Using default balanced sound profile since no description provided.\n\n");
+        }
+
+        // Parameters to be set
+        prompt.push_str("## Parameters to Configure\n\n");
         for param in parameters {
             prompt.push_str(&format!(
                 "- Name: {}, CC: {}, Description: {}\n",
@@ -194,17 +263,20 @@ impl AIService {
             ));
         }
 
-        // Instructions for the output format
-        prompt.push_str("\nPlease respond with a JSON object containing an array of parameter values in the following format:\n");
-        prompt.push_str("{\n  \"values\": [\n    { \"cc\": <cc_number>, \"name\": \"<param_name>\", \"value\": <value_0_to_127> },\n    ...\n  ]\n}\n\n");
+        // Response format with reasoning
+        prompt.push_str("\n## Response Format\n\n");
+        prompt.push_str("For each parameter:\n");
+        prompt.push_str("1. Identify its category and function\n");
+        prompt.push_str("2. Analyze how it relates to the sound goals\n");
+        prompt.push_str("3. Determine the appropriate value\n");
+        prompt.push_str("4. Include your reasoning\n\n");
 
-        // Additional context about the values
-        prompt.push_str("Consider these guidelines for setting values:\n");
-        prompt.push_str("- Values range from 0 (minimum) to 127 (maximum)\n");
-        prompt.push_str("- Interpret the snapshot name and description to determine appropriate values\n");
-        prompt.push_str("- Use parameter descriptions to inform your decisions\n");
-        prompt.push_str("- Ensure consistency across related parameters\n");
-        debug!(prompt);
+        prompt.push_str("Respond with a JSON object in this format:\n");
+        prompt.push_str("{\n  \"values\": [\n    { \"cc\": <cc_number>, \"name\": \"<param_name>\", \"value\": <value_0_to_127>, \"reasoning\": \"Your step-by-step reasoning\" },\n    ...\n  ]\n}\n\n");
+
+        prompt.push_str("Focus on the internal logic of the relationship between parameter function, sound goals, and appropriate values.\n");
+
+        debug!("Audio reasoning prompt:\n{}", prompt);
         prompt
     }
 
@@ -213,7 +285,7 @@ impl AIService {
         &self,
         api_key: &str,
         prompt: &str,
-        parameters: &[crate::model::Parameter],
+        parameters: &[Parameter],
     ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
         // Create the request
         let request = OpenAIRequest {
@@ -221,14 +293,14 @@ impl AIService {
             messages: vec![
                 OpenAIMessage {
                     role: "system".to_string(),
-                    content: "You are a MIDI parameter value generator. You will receive context about a music project, snapshot, and parameters. Respond with a JSON structure containing appropriate MIDI CC values (0-127) for each parameter.".to_string(),
+                    content: "You are an expert audio engineer and music producer. You understand how audio parameters affect sound and how to set them to achieve specific sonic goals. Think step-by-step and use your knowledge of audio engineering principles to set appropriate parameter values.".to_string(),
                 },
                 OpenAIMessage {
                     role: "user".to_string(),
                     content: prompt.to_string(),
                 },
             ],
-            temperature: 0.7,
+            temperature: 0.4, // Lower temperature for more consistent reasoning
         };
 
         // Send the request
@@ -262,7 +334,13 @@ impl AIService {
             Ok(ai_response) => {
                 // Create a map of CC numbers to values
                 let mut cc_value_map = std::collections::HashMap::new();
-                for param_value in ai_response.values {
+
+                // Log the reasoning for each parameter setting
+                for param_value in &ai_response.values {
+                    if let Some(reasoning) = &param_value.reasoning {
+                        info!("Parameter '{}' (CC {}) set to {}: {}", 
+                              param_value.name, param_value.cc, param_value.value, reasoning);
+                    }
                     cc_value_map.insert(param_value.cc, param_value.value);
                 }
 

@@ -2,8 +2,8 @@
 - Properly reflect Link status in UI - done
 - Enable morphing and sync modifiers - done 
 - Improve colour-scheme for pads and on-screen grid - done 
+- Enable AI integration - see AI_feature.md
 - Enable selection of MIDI device from UI
-- Enable AI integration
 - Bug fixing
 - Enable bank select
 - Fix multi-platform builds and test on Windows & Linux
